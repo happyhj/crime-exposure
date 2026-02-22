@@ -39,6 +39,20 @@ export const CITIES: Record<string, CityConfig> = {
       [-87.6340, 41.8700],   // McCormick Place
     ],
   },
+  la: {
+    name: 'Los Angeles',
+    center: [-118.2437, 34.0522],
+    zoom: 12,
+    beatsPath: null, // LA reporting districts not yet available
+    routeCoords: [
+      [-118.2553, 34.0583],  // Grand Park / City Hall
+      [-118.2510, 34.0563],  // Little Tokyo
+      [-118.2468, 34.0445],  // Arts District
+      [-118.2500, 34.0407],  // SCI-Arc
+      [-118.2615, 34.0480],  // Pershing Square
+      [-118.2680, 34.0510],  // Staples Center area
+    ],
+  },
 };
 
 export const CITY_IDS = Object.keys(CITIES) as Array<keyof typeof CITIES>;
