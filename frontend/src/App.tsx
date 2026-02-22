@@ -9,8 +9,17 @@ import type { CityId } from './lib/cities.js';
 import type { CrimeRecord } from './lib/api.js';
 import type { UserProfile } from './types/user-profile.js';
 import { createDefaultProfile } from './types/user-profile.js';
+import type { RouteResult } from './services/routing.js';
+import type { CrimePoint } from './utils/route-segments.js';
 
 export type YearRange = [number, number];
+
+export interface RouteOverlayData {
+  candidateId: string;
+  route: RouteResult;
+  crimes: CrimePoint[];
+  color: string;
+}
 
 type AppMode = 'explore' | 'onboarding' | 'analysis';
 
@@ -24,6 +33,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [activeCodes, setActiveCodes] = useState<Set<string> | null>(null);
   const [crimeRecords, setCrimeRecords] = useState<CrimeRecord[]>([]);
+  const [routeOverlays, setRouteOverlays] = useState<RouteOverlayData[]>([]);
 
   const handleTimeChange = useCallback((hour: number) => {
     setSelectedHour(hour);
@@ -50,7 +60,7 @@ export default function App() {
   }, []);
 
   const handleAnalyze = useCallback(() => {
-    // TODO: will trigger route generation + score calculation in later issues
+    setRouteOverlays([]);
     setMode('analysis');
   }, []);
 
@@ -66,6 +76,7 @@ export default function App() {
         yearRange={yearRange}
         activeCodes={activeCodes}
         onDataLoaded={handleDataLoaded}
+        routeOverlays={mode === 'analysis' ? routeOverlays : []}
       />
       <CitySelector
         selectedCity={selectedCity}
@@ -111,6 +122,7 @@ export default function App() {
         <Dashboard
           profile={profile}
           onBack={handleBackToOnboarding}
+          onRoutesReady={setRouteOverlays}
         />
       )}
 

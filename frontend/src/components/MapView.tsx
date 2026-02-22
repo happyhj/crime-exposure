@@ -9,6 +9,8 @@ import { getSunPosition } from '../lib/sun-position.js';
 import { getLightingForHour } from '../lib/lighting.js';
 import { CITIES, type CityId } from '../lib/cities.js';
 import { TIME_WINDOW } from './TimeSlider.js';
+import type { RouteOverlayData } from '../App.js';
+import { computeRouteSegments, segmentsToGeoJSON } from '../utils/route-segments.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
 
@@ -22,6 +24,7 @@ const BEATS_FILL_LAYER_ID = 'beat-fill';
 const BEATS_LINE_LAYER_ID = 'beat-line';
 const ROUTE_SOURCE_ID = 'avatar-route';
 const ROUTE_LAYER_ID = 'avatar-route-line';
+const EXPOSURE_ROUTE_PREFIX = 'exposure-route-';
 
 interface MapViewProps {
   selectedHour: number;
@@ -29,9 +32,10 @@ interface MapViewProps {
   yearRange: [number, number];
   activeCodes: Set<string> | null; // null = show all
   onDataLoaded?: (records: CrimeRecord[]) => void;
+  routeOverlays?: RouteOverlayData[];
 }
 
-export default function MapView({ selectedHour, selectedCity, yearRange, activeCodes, onDataLoaded }: MapViewProps) {
+export default function MapView({ selectedHour, selectedCity, yearRange, activeCodes, onDataLoaded, routeOverlays = [] }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const avatarMarkerRef = useRef<maplibregl.Marker | null>(null);
@@ -182,6 +186,70 @@ export default function MapView({ selectedHour, selectedCity, yearRange, activeC
     // Day/night building color transition
     updateDayNightStyle(map, selectedHour);
   }, [selectedHour, activeCodes]);
+
+  // Render exposure route overlays with crime density coloring
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.loaded()) return;
+
+    // Remove existing exposure route layers/sources
+    const style = map.getStyle();
+    if (style?.layers) {
+      for (const layer of style.layers) {
+        if (layer.id.startsWith(EXPOSURE_ROUTE_PREFIX)) {
+          map.removeLayer(layer.id);
+        }
+      }
+    }
+    if (style?.sources) {
+      for (const srcId of Object.keys(style.sources)) {
+        if (srcId.startsWith(EXPOSURE_ROUTE_PREFIX)) {
+          map.removeSource(srcId);
+        }
+      }
+    }
+
+    // Add new exposure route overlays
+    for (const overlay of routeOverlays) {
+      const sourceId = `${EXPOSURE_ROUTE_PREFIX}${overlay.candidateId}`;
+      const layerId = `${EXPOSURE_ROUTE_PREFIX}line-${overlay.candidateId}`;
+      const outlineLayerId = `${EXPOSURE_ROUTE_PREFIX}outline-${overlay.candidateId}`;
+
+      const segments = computeRouteSegments(
+        overlay.route.coordinates,
+        overlay.crimes,
+        100,
+        200,
+      );
+      const geojson = segmentsToGeoJSON(segments);
+
+      map.addSource(sourceId, { type: 'geojson', data: geojson });
+
+      // Outline layer (thicker, candidate color)
+      map.addLayer({
+        id: outlineLayerId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': overlay.color,
+          'line-width': 8,
+          'line-opacity': 0.3,
+        },
+      });
+
+      // Segment color layer (crime density)
+      map.addLayer({
+        id: layerId,
+        type: 'line',
+        source: sourceId,
+        paint: {
+          'line-color': ['get', 'color'],
+          'line-width': 4,
+          'line-opacity': 0.9,
+        },
+      });
+    }
+  }, [routeOverlays]);
 
   return (
     <div
