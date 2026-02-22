@@ -77,6 +77,9 @@ export default function MapView({ selectedHour }: MapViewProps) {
     }
 
     map.setFilter(CRIME_LAYER_ID, filter);
+
+    // Day/night building color transition
+    updateDayNightStyle(map, selectedHour);
   }, [selectedHour]);
 
   return (
@@ -175,6 +178,26 @@ function addCrimeLayer(map: maplibregl.Map) {
   map.on('mouseleave', CRIME_LAYER_ID, () => {
     map.getCanvas().style.cursor = '';
   });
+}
+
+function isNightTime(hour: number): boolean {
+  return hour < 6 || hour >= 20;
+}
+
+function updateDayNightStyle(map: maplibregl.Map, hour: number) {
+  const night = isNightTime(hour);
+
+  // Update building color for day/night
+  if (map.getLayer('3d-buildings')) {
+    map.setPaintProperty('3d-buildings', 'fill-extrusion-color', night ? '#334' : '#aaa');
+    map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', night ? 0.8 : 0.6);
+  }
+
+  // Update crime point stroke for visibility
+  if (map.getLayer(CRIME_LAYER_ID)) {
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', night ? '#333' : '#fff');
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', night ? 0.85 : 0.7);
+  }
 }
 
 async function loadCrimeData(map: maplibregl.Map) {
