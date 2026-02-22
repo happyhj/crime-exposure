@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
+import { fetchCrimes } from '../lib/api.js';
+import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
 
@@ -8,6 +10,9 @@ const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
 const DEFAULT_ZOOM = 14;
 const DEFAULT_PITCH = 60;
 const DEFAULT_BEARING = -17;
+
+const CRIME_SOURCE_ID = 'crime-data';
+const CRIME_LAYER_ID = 'crime-points';
 
 export default function MapView() {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -31,6 +36,8 @@ export default function MapView() {
 
     map.on('load', () => {
       addBuildingLayer(map);
+      addCrimeLayer(map);
+      loadCrimeData(map);
     });
 
     mapRef.current = map;
@@ -50,12 +57,10 @@ export default function MapView() {
 }
 
 function addBuildingLayer(map: maplibregl.Map) {
-  // MapTiler Streets v2 includes 'building' source layer in 'openmaptiles' source
   const source = map.getSource('openmaptiles');
-  if (!source) return; // demo tiles don't have buildings
+  if (!source) return;
 
   const layers = map.getStyle().layers ?? [];
-  // Find the first symbol layer to insert buildings below labels
   const labelLayer = layers.find(l => l.type === 'symbol');
 
   map.addLayer(
@@ -68,16 +73,12 @@ function addBuildingLayer(map: maplibregl.Map) {
       paint: {
         'fill-extrusion-color': '#aaa',
         'fill-extrusion-height': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
+          'interpolate', ['linear'], ['zoom'],
           14, 0,
           14.5, ['get', 'render_height'],
         ],
         'fill-extrusion-base': [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
+          'interpolate', ['linear'], ['zoom'],
           14, 0,
           14.5, ['get', 'render_min_height'],
         ],
@@ -86,4 +87,80 @@ function addBuildingLayer(map: maplibregl.Map) {
     },
     labelLayer?.id,
   );
+}
+
+function addCrimeLayer(map: maplibregl.Map) {
+  map.addSource(CRIME_SOURCE_ID, {
+    type: 'geojson',
+    data: { type: 'FeatureCollection', features: [] },
+  });
+
+  map.addLayer({
+    id: CRIME_LAYER_ID,
+    type: 'circle',
+    source: CRIME_SOURCE_ID,
+    paint: {
+      'circle-radius': [
+        'interpolate', ['linear'], ['zoom'],
+        10, 2,
+        15, 6,
+      ],
+      'circle-color': [
+        'match', ['get', 'nibrs_category'],
+        'Violent', CATEGORY_COLORS.Violent,
+        'Property', CATEGORY_COLORS.Property,
+        'Society', CATEGORY_COLORS.Society,
+        CATEGORY_COLORS.Other,
+      ],
+      'circle-opacity': 0.7,
+      'circle-stroke-width': 1,
+      'circle-stroke-color': '#fff',
+    },
+  });
+
+  // Click popup
+  map.on('click', CRIME_LAYER_ID, (e) => {
+    if (!e.features?.length) return;
+    const props = e.features[0].properties;
+    const coords = (e.features[0].geometry as GeoJSON.Point).coordinates.slice() as [number, number];
+
+    const hour = props.occurred_hour !== null ? `${String(props.occurred_hour).padStart(2, '0')}:00` : 'Unknown';
+
+    new maplibregl.Popup()
+      .setLngLat(coords)
+      .setHTML(`
+        <strong>${props.nibrs_category}</strong><br/>
+        Code: ${props.nibrs_code}<br/>
+        Date: ${props.occurred_date}<br/>
+        Time: ${hour}<br/>
+        ${props.neighborhood ? `Area: ${props.neighborhood}` : ''}
+      `)
+      .addTo(map);
+  });
+
+  map.on('mouseenter', CRIME_LAYER_ID, () => {
+    map.getCanvas().style.cursor = 'pointer';
+  });
+  map.on('mouseleave', CRIME_LAYER_ID, () => {
+    map.getCanvas().style.cursor = '';
+  });
+}
+
+async function loadCrimeData(map: maplibregl.Map) {
+  try {
+    const response = await fetchCrimes({
+      city: 'seattle',
+      from: '2024-01',
+      to: '2024-12',
+      limit: 50000,
+    });
+
+    const geojson = crimesToGeoJSON(response.data);
+    const source = map.getSource(CRIME_SOURCE_ID) as maplibregl.GeoJSONSource;
+    source.setData(geojson);
+
+    console.log(`Loaded ${response.data.length} crime records (${response.meta.total} total)`);
+  } catch (err) {
+    console.warn('Failed to load crime data:', err);
+  }
 }
