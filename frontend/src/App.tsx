@@ -68,6 +68,11 @@ export default function App() {
     setMode('onboarding');
   }, []);
 
+  const handleBackToExplore = useCallback(() => {
+    setRouteOverlays([]);
+    setMode('explore');
+  }, []);
+
   return (
     <div style={{ width: '100%', height: '100%', position: 'relative' }}>
       <MapView
@@ -122,6 +127,7 @@ export default function App() {
         <Dashboard
           profile={profile}
           onBack={handleBackToOnboarding}
+          onExplore={handleBackToExplore}
           onRoutesReady={setRouteOverlays}
         />
       )}
