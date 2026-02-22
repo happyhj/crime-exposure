@@ -14,6 +14,7 @@
     "@turf/along": "^7.3.4",
     "@turf/bbox": "^7.3.4",
     "@turf/boolean-point-in-polygon": "^7.3.4",
+    "@turf/centroid": "^7.3.4",
     "@turf/helpers": "^7.3.4",
     "@turf/length": "^7.3.4",
     "@turf/random": "^7.3.4",

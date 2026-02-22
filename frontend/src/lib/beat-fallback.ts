@@ -1,6 +1,6 @@
-import bbox from '@turf/bbox';
-import { randomPoint } from '@turf/random';
+import centroid from '@turf/centroid';
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import { point } from '@turf/helpers';
 import type { Feature, MultiPolygon, Polygon, FeatureCollection } from 'geojson';
 
 type BeatPolygon = Feature<Polygon | MultiPolygon, { beat: string }>;
@@ -25,26 +25,32 @@ export function buildBeatIndex(
 }
 
 /**
- * Generate a random point within a beat polygon.
- * Uses rejection sampling: generate random points in bounding box,
- * keep the first one that falls within the polygon.
+ * Generate a random point within a beat polygon using centroid + jitter.
+ * Points are scattered around the centroid to avoid water areas
+ * (beat polygons often extend over water in coastal cities).
  */
 export function randomPointInBeat(
   beatPolygon: BeatPolygon,
-  maxAttempts = 20,
+  maxAttempts = 10,
 ): [number, number] | null {
-  const bounds = bbox(beatPolygon);
+  const center = centroid(beatPolygon);
+  const [cx, cy] = center.geometry.coordinates;
+
+  // Jitter radius ~300m (≈0.003°). Enough spread to look natural,
+  // small enough to stay on land near the centroid.
+  const JITTER = 0.003;
 
   for (let i = 0; i < maxAttempts; i++) {
-    const pts = randomPoint(1, { bbox: bounds });
-    const pt = pts.features[0];
+    const lng = cx + (Math.random() - 0.5) * 2 * JITTER;
+    const lat = cy + (Math.random() - 0.5) * 2 * JITTER;
+    const pt = point([lng, lat]);
     if (booleanPointInPolygon(pt, beatPolygon)) {
-      return pt.geometry.coordinates as [number, number];
+      return [lng, lat];
     }
   }
 
-  // Fallback: return centroid-ish point (center of bbox)
-  return [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2];
+  // Fallback: centroid itself (guaranteed on land for urban beats)
+  return [cx, cy];
 }
 
 export type { BeatIndex };
