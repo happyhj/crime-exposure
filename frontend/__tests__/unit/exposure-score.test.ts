@@ -3,6 +3,7 @@ import {
   timeRelevance,
   distanceDecay,
   getCrimeWeight,
+  getHouseholdMultiplier,
   scoreToGrade,
   computeExposureScore,
   type CrimeRecord,
@@ -229,5 +230,110 @@ describe('computeExposureScore', () => {
     expect(result).toHaveProperty('work');
     expect(typeof result.total).toBe('number');
     expect(['A', 'B', 'C', 'D', 'F']).toContain(result.grade);
+  });
+});
+
+// ---------- getHouseholdMultiplier ----------
+
+describe('getHouseholdMultiplier', () => {
+  it('solo always returns 1.0 for assault', () => {
+    expect(getHouseholdMultiplier('13A', 'solo')).toBe(1.0);
+  });
+
+  it('couple reduces assault weight', () => {
+    expect(getHouseholdMultiplier('13A', 'couple')).toBe(0.8);
+  });
+
+  it('family increases assault weight', () => {
+    expect(getHouseholdMultiplier('13A', 'family')).toBe(1.2);
+  });
+
+  it('family increases sex offense weight to 1.5', () => {
+    expect(getHouseholdMultiplier('11A', 'family')).toBe(1.5);
+  });
+
+  it('family increases drug crime weight to 1.3', () => {
+    expect(getHouseholdMultiplier('35A', 'family')).toBe(1.3);
+  });
+
+  it('couple reduces robbery weight', () => {
+    expect(getHouseholdMultiplier('120', 'couple')).toBe(0.7);
+  });
+
+  it('returns default multiplier for unknown code', () => {
+    expect(getHouseholdMultiplier('999', 'solo')).toBe(1.0);
+    expect(getHouseholdMultiplier('999', 'couple')).toBe(0.9);
+    expect(getHouseholdMultiplier('999', 'family')).toBe(1.0);
+  });
+});
+
+// ---------- Household integration with computeExposureScore ----------
+
+describe('computeExposureScore with household', () => {
+  it('family scores higher than solo for sex offenses', () => {
+    const sexCrimes = Array.from({ length: 20 }, () =>
+      makeCrime({ nibrs_code: '11A', nibrs_category: 'Violent', occurred_hour: 13 }),
+    );
+
+    const soloResult = computeExposureScore(makeInput({
+      homeCrimes: sexCrimes,
+      household: 'solo',
+    }));
+    const familyResult = computeExposureScore(makeInput({
+      homeCrimes: sexCrimes,
+      household: 'family',
+    }));
+
+    expect(familyResult.home).toBeGreaterThan(soloResult.home);
+  });
+
+  it('couple scores lower than solo for violent crimes', () => {
+    const violentCrimes = Array.from({ length: 20 }, () =>
+      makeCrime({ nibrs_code: '13A', nibrs_category: 'Violent', occurred_hour: 8 }),
+    );
+
+    const soloResult = computeExposureScore(makeInput({
+      commuteCrimes: violentCrimes,
+      household: 'solo',
+    }));
+    const coupleResult = computeExposureScore(makeInput({
+      commuteCrimes: violentCrimes,
+      household: 'couple',
+    }));
+
+    expect(coupleResult.commute).toBeLessThan(soloResult.commute);
+  });
+
+  it('family scores higher for drug crimes near home', () => {
+    const drugCrimes = Array.from({ length: 30 }, () =>
+      makeCrime({ nibrs_code: '35A', nibrs_category: 'Society', occurred_hour: 15 }),
+    );
+
+    const soloResult = computeExposureScore(makeInput({
+      homeCrimes: drugCrimes,
+      household: 'solo',
+    }));
+    const familyResult = computeExposureScore(makeInput({
+      homeCrimes: drugCrimes,
+      household: 'family',
+    }));
+
+    expect(familyResult.home).toBeGreaterThan(soloResult.home);
+  });
+
+  it('defaults to solo when household not specified', () => {
+    const crimes = Array.from({ length: 10 }, () =>
+      makeCrime({ nibrs_code: '13A', occurred_hour: 8 }),
+    );
+
+    const noHousehold = computeExposureScore(makeInput({
+      commuteCrimes: crimes,
+    }));
+    const explicitSolo = computeExposureScore(makeInput({
+      commuteCrimes: crimes,
+      household: 'solo',
+    }));
+
+    expect(noHousehold.total).toBe(explicitSolo.total);
   });
 });

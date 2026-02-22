@@ -88,6 +88,7 @@ export default function Dashboard({ profile, onBack }: DashboardProps) {
         workCrimes: workRes.data.map(crimeToScoreCrime),
         commuteStart: profile.commuteStart,
         commuteEnd: profile.commuteEnd,
+        household: profile.household,
       };
 
       const score = computeExposureScore(input);

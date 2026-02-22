@@ -17,6 +17,8 @@ export interface CrimeRecord {
   longitude: number | null;
 }
 
+export type Household = 'solo' | 'couple' | 'family';
+
 export interface ScoreInput {
   /** Crimes near the candidate home (radius ~500m) */
   homeCrimes: CrimeRecord[];
@@ -28,6 +30,8 @@ export interface ScoreInput {
   commuteStart: number;
   /** Hour the user leaves work (0-23) */
   commuteEnd: number;
+  /** Household composition (default: 'solo') */
+  household?: Household;
 }
 
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F';
@@ -96,6 +100,56 @@ const CRIME_WEIGHTS: Record<string, Record<Context, number>> = {
 
 const DEFAULT_WEIGHT: Record<Context, number> = { home: 0.3, commute: 0.3, work: 0.2 };
 
+// ---------- Household multipliers ----------
+
+// Maps NIBRS code prefixes to household-specific multipliers.
+// 'solo' is always 1.0 (baseline). Grouped by crime category for clarity.
+const HOUSEHOLD_MULTIPLIERS: Record<string, Record<Household, number>> = {
+  // Assault (13A, 13B)
+  '13A': { solo: 1.0, couple: 0.8, family: 1.2 },
+  '13B': { solo: 1.0, couple: 0.8, family: 1.2 },
+  '09A': { solo: 1.0, couple: 0.8, family: 1.2 },
+  '09B': { solo: 1.0, couple: 0.8, family: 1.2 },
+  // Robbery
+  '120': { solo: 1.0, couple: 0.7, family: 1.0 },
+  // Burglary
+  '220': { solo: 1.0, couple: 1.0, family: 1.2 },
+  // Sex Offense (11A-D)
+  '11A': { solo: 0.8, couple: 0.8, family: 1.5 },
+  '11B': { solo: 0.8, couple: 0.8, family: 1.5 },
+  '11C': { solo: 0.8, couple: 0.8, family: 1.5 },
+  '11D': { solo: 0.8, couple: 0.8, family: 1.5 },
+  '36A': { solo: 0.8, couple: 0.8, family: 1.5 },
+  '36B': { solo: 0.8, couple: 0.8, family: 1.5 },
+  // Drug/Narcotics
+  '35A': { solo: 0.5, couple: 0.5, family: 1.3 },
+  '35B': { solo: 0.5, couple: 0.5, family: 1.3 },
+  // Vandalism
+  '290': { solo: 0.3, couple: 0.3, family: 0.5 },
+  // Theft (general)
+  '23A': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23B': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23C': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23D': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23E': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23F': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23G': { solo: 1.0, couple: 0.9, family: 1.0 },
+  '23H': { solo: 1.0, couple: 0.9, family: 1.0 },
+  // Motor Vehicle Theft
+  '240': { solo: 1.0, couple: 1.0, family: 1.0 },
+};
+
+const DEFAULT_HOUSEHOLD_MULT: Record<Household, number> = { solo: 1.0, couple: 0.9, family: 1.0 };
+
+/**
+ * Get the household multiplier for a specific crime code.
+ */
+export function getHouseholdMultiplier(nibrsCode: string, household: Household): number {
+  const mult = HOUSEHOLD_MULTIPLIERS[nibrsCode];
+  if (mult) return mult[household];
+  return DEFAULT_HOUSEHOLD_MULT[household];
+}
+
 // ---------- Core functions ----------
 
 /**
@@ -134,19 +188,21 @@ export function getCrimeWeight(nibrsCode: string, context: Context): number {
 
 /**
  * Compute a raw sub-score for a set of crimes in a context.
- * This is the sum of (weight × time_relevance).
+ * This is the sum of (weight × household_mult × time_relevance).
  * Distance is not applied here because crimes are already pre-filtered by radius/buffer.
  */
 function computeSubScore(
   crimes: CrimeRecord[],
   context: Context,
   referenceHour: number,
+  household: Household = 'solo',
 ): number {
   let score = 0;
   for (const crime of crimes) {
     const w = getCrimeWeight(crime.nibrs_code, context);
+    const h = getHouseholdMultiplier(crime.nibrs_code, household);
     const t = timeRelevance(crime.occurred_hour, referenceHour);
-    score += w * t;
+    score += w * h * t;
   }
   return score;
 }
@@ -187,6 +243,8 @@ const CALIBRATION_WORK = 80;
  * Compute the full Crime Exposure Score for a candidate home.
  */
 export function computeExposureScore(input: ScoreInput): ExposureResult {
+  const household = input.household ?? 'solo';
+
   // Reference hours for time relevance
   // Home: mid-point of absence (when burglary matters most)
   const absenceMidpoint = input.commuteStart <= input.commuteEnd
@@ -199,9 +257,9 @@ export function computeExposureScore(input: ScoreInput): ExposureResult {
   // Work: mid-point of work hours
   const workHour = absenceMidpoint;
 
-  const homeRaw = computeSubScore(input.homeCrimes, 'home', absenceMidpoint);
-  const commuteRaw = computeSubScore(input.commuteCrimes, 'commute', commuteHour);
-  const workRaw = computeSubScore(input.workCrimes, 'work', workHour);
+  const homeRaw = computeSubScore(input.homeCrimes, 'home', absenceMidpoint, household);
+  const commuteRaw = computeSubScore(input.commuteCrimes, 'commute', commuteHour, household);
+  const workRaw = computeSubScore(input.workCrimes, 'work', workHour, household);
 
   const home = normalize(homeRaw, CALIBRATION_HOME);
   const commute = normalize(commuteRaw, CALIBRATION_COMMUTE);
