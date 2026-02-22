@@ -37,8 +37,9 @@ export async function fetchCrimes(params: {
 }
 
 export interface StatsEntry {
-  group: string;
+  key: string;
   count: number;
+  category?: string;
 }
 
 export interface StatsResponse {
@@ -47,12 +48,16 @@ export interface StatsResponse {
 
 export async function fetchCrimeStats(params: {
   city: string;
-  groupBy: 'hour' | 'nibrs_category';
+  groupBy: 'hour' | 'nibrs_category' | 'nibrs_code';
+  from?: string;
+  to?: string;
 }): Promise<StatsResponse> {
   const searchParams = new URLSearchParams({
     city: params.city,
     groupBy: params.groupBy,
   });
+  if (params.from) searchParams.set('from', params.from);
+  if (params.to) searchParams.set('to', params.to);
 
   const res = await fetch(`/api/crimes/stats?${searchParams}`);
   if (!res.ok) throw new Error(`API error: ${res.status}`);

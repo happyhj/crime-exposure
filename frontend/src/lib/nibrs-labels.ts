@@ -1,0 +1,76 @@
+/** NIBRS offense code → human-readable label */
+export const NIBRS_LABELS: Record<string, string> = {
+  // Violent
+  '09A': 'Murder',
+  '09B': 'Negligent Manslaughter',
+  '09C': 'Justifiable Homicide',
+  '100': 'Kidnapping',
+  '11A': 'Forcible Rape',
+  '11B': 'Forcible Sodomy',
+  '11C': 'Sexual Assault w/ Object',
+  '11D': 'Fondling',
+  '120': 'Robbery',
+  '13A': 'Aggravated Assault',
+  '13B': 'Simple Assault',
+  '13C': 'Intimidation',
+
+  // Property
+  '200': 'Arson',
+  '210': 'Extortion',
+  '220': 'Burglary',
+  '23A': 'Pocket-picking',
+  '23B': 'Purse-snatching',
+  '23C': 'Shoplifting',
+  '23D': 'Theft from Building',
+  '23E': 'Theft from Coin Machine',
+  '23F': 'Theft from Vehicle',
+  '23G': 'Theft of Vehicle Parts',
+  '23H': 'Theft (Other)',
+  '240': 'Motor Vehicle Theft',
+  '250': 'Counterfeiting/Forgery',
+  '26A': 'False Pretenses/Fraud',
+  '26B': 'Credit Card Fraud',
+  '26C': 'Impersonation',
+  '26D': 'Welfare Fraud',
+  '26E': 'Wire Fraud',
+  '26F': 'Identity Theft',
+  '26G': 'Hacking/Cyber',
+  '270': 'Embezzlement',
+  '280': 'Stolen Property',
+  '290': 'Vandalism',
+
+  // Society
+  '35A': 'Drug/Narcotics Violation',
+  '35B': 'Drug Equipment Violation',
+  '36A': 'Incest',
+  '36B': 'Statutory Rape',
+  '370': 'Pornography',
+  '39A': 'Betting/Wagering',
+  '39B': 'Operating Gambling',
+  '40A': 'Prostitution',
+  '40B': 'Assisting Prostitution',
+  '40C': 'Purchasing Prostitution',
+  '520': 'Weapon Violation',
+  '64A': 'Human Trafficking (Commercial)',
+  '64B': 'Human Trafficking (Servitude)',
+  '720': 'Animal Cruelty',
+
+  // Other
+  '90A': 'Bad Checks',
+  '90B': 'Curfew Violation',
+  '90C': 'Disorderly Conduct',
+  '90D': 'DUI',
+  '90E': 'Drunkenness',
+  '90F': 'Family Offense (Non-violent)',
+  '90G': 'Liquor Law Violation',
+  '90H': 'Peeping Tom',
+  '90J': 'Trespass',
+  '90Z': 'Other Offense',
+  '500': 'Bribery',
+  '510': 'Animal Cruelty (Legacy)',
+  '999': 'Unmapped',
+};
+
+export function getNibrsLabel(code: string): string {
+  return NIBRS_LABELS[code] ?? code;
+}

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import { fetchCrimes } from '../lib/api.js';
+import { fetchCrimes, type CrimeRecord } from '../lib/api.js';
 import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
 import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
 import { getAvatarPosition, getRouteGeoJSON } from '../lib/avatar-route.js';
@@ -26,11 +26,12 @@ const ROUTE_LAYER_ID = 'avatar-route-line';
 interface MapViewProps {
   selectedHour: number;
   selectedCity: CityId;
-  activeCategories: Set<string>;
-  onDataLoaded?: () => void;
+  yearRange: [number, number];
+  activeCodes: Set<string> | null; // null = show all
+  onDataLoaded?: (records: CrimeRecord[]) => void;
 }
 
-export default function MapView({ selectedHour, selectedCity, activeCategories, onDataLoaded }: MapViewProps) {
+export default function MapView({ selectedHour, selectedCity, yearRange, activeCodes, onDataLoaded }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const avatarMarkerRef = useRef<maplibregl.Marker | null>(null);
@@ -59,7 +60,7 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
       addBuildingLayer(map);
       addRouteLayer(map, cityConfig.routeCoords);
       addCrimeLayer(map);
-      loadCrimeData(map, selectedCity, cityConfig.beatsPath, cityConfig.beatKey).then(() => onDataLoaded?.());
+      loadCrimeData(map, selectedCity, yearRange, cityConfig.beatsPath, cityConfig.beatKey).then(records => onDataLoaded?.(records));
 
       // Create avatar marker
       const avatarEl = createAvatarElement();
@@ -115,20 +116,33 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
     }
 
     // Reload crime data
-    loadCrimeData(map, selectedCity, cityConfig.beatsPath, cityConfig.beatKey).then(() => onDataLoaded?.());
+    loadCrimeData(map, selectedCity, yearRange, cityConfig.beatsPath, cityConfig.beatKey).then(records => onDataLoaded?.(records));
 
   }, [selectedCity]);
+
+  // Handle year range change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.loaded()) return;
+
+    const cityConfig = CITIES[currentCityRef.current];
+    loadCrimeData(map, currentCityRef.current, yearRange, cityConfig.beatsPath, cityConfig.beatKey).then(records => onDataLoaded?.(records));
+  }, [yearRange]);
 
   // Update time-based opacity, category filter, and avatar position
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getLayer(CRIME_LAYER_ID)) return;
 
-    // Category filter (hard filter — hidden categories removed)
-    const categoryFilter: maplibregl.FilterSpecification = [
-      'in', ['get', 'nibrs_category'], ['literal', [...activeCategories]],
-    ];
-    map.setFilter(CRIME_LAYER_ID, categoryFilter);
+    // Code-level filter (null = show all)
+    if (activeCodes) {
+      const codeFilter: maplibregl.FilterSpecification = [
+        'in', ['get', 'nibrs_code'], ['literal', [...activeCodes]],
+      ];
+      map.setFilter(CRIME_LAYER_ID, codeFilter);
+    } else {
+      map.setFilter(CRIME_LAYER_ID, null);
+    }
 
     // Time-based opacity: smooth fade based on circular distance from selectedHour
     // circularDist = min(|hour - selected|, 24 - |hour - selected|)
@@ -167,7 +181,7 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
 
     // Day/night building color transition
     updateDayNightStyle(map, selectedHour);
-  }, [selectedHour, activeCategories]);
+  }, [selectedHour, activeCodes]);
 
   return (
     <div
@@ -466,13 +480,13 @@ async function loadBeatIndex(beatsPath: string | null, beatKey: string): Promise
   }
 }
 
-async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: string | null, beatKey: string) {
+async function loadCrimeData(map: maplibregl.Map, city: CityId, yearRange: [number, number], beatsPath: string | null, beatKey: string): Promise<CrimeRecord[]> {
   try {
     const [response, beatIndex] = await Promise.all([
       fetchCrimes({
         city,
-        from: '2024-01',
-        to: '2024-12',
+        from: `${yearRange[0]}-01`,
+        to: `${yearRange[1]}-12`,
         limit: 50000,
       }),
       loadBeatIndex(beatsPath, beatKey),
@@ -488,7 +502,9 @@ async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: strin
     console.log(
       `[${city}] Loaded ${response.data.length} crime records (${response.meta.total} total, ${beatFallbackCount} beat-fallback)`,
     );
+    return response.data;
   } catch (err) {
     console.warn(`Failed to load crime data for ${city}:`, err);
+    return [];
   }
 }

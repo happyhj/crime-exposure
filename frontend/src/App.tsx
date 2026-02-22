@@ -4,14 +4,17 @@ import TimeSlider from './components/TimeSlider.js';
 import CitySelector from './components/CitySelector.js';
 import StatsPanel from './components/StatsPanel.js';
 import type { CityId } from './lib/cities.js';
+import type { CrimeRecord } from './lib/api.js';
 
-const ALL_CATEGORIES = new Set(['Violent', 'Property', 'Society', 'Other']);
+export type YearRange = [number, number];
 
 export default function App() {
   const [selectedHour, setSelectedHour] = useState(12);
   const [selectedCity, setSelectedCity] = useState<CityId>('seattle');
+  const [yearRange, setYearRange] = useState<YearRange>([2024, 2025]);
   const [loading, setLoading] = useState(false);
-  const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set(ALL_CATEGORIES));
+  const [activeCodes, setActiveCodes] = useState<Set<string> | null>(null); // null = all selected
+  const [crimeRecords, setCrimeRecords] = useState<CrimeRecord[]>([]);
 
   const handleTimeChange = useCallback((hour: number) => {
     setSelectedHour(hour);
@@ -20,22 +23,21 @@ export default function App() {
   const handleCityChange = useCallback((city: CityId) => {
     setSelectedCity(city);
     setLoading(true);
+    setActiveCodes(null); // reset to all on city switch
   }, []);
 
-  const handleDataLoaded = useCallback(() => {
+  const handleYearRangeChange = useCallback((range: YearRange) => {
+    setYearRange(range);
+    setLoading(true);
+  }, []);
+
+  const handleDataLoaded = useCallback((records: CrimeRecord[]) => {
+    setCrimeRecords(records);
     setLoading(false);
   }, []);
 
-  const handleCategoryToggle = useCallback((category: string) => {
-    setActiveCategories(prev => {
-      const next = new Set(prev);
-      if (next.has(category)) {
-        next.delete(category);
-      } else {
-        next.add(category);
-      }
-      return next;
-    });
+  const handleCodesChange = useCallback((codes: Set<string>) => {
+    setActiveCodes(codes);
   }, []);
 
   return (
@@ -43,18 +45,23 @@ export default function App() {
       <MapView
         selectedHour={selectedHour}
         selectedCity={selectedCity}
-        activeCategories={activeCategories}
+        yearRange={yearRange}
+        activeCodes={activeCodes}
         onDataLoaded={handleDataLoaded}
       />
       <CitySelector
         selectedCity={selectedCity}
+        yearRange={yearRange}
         onCityChange={handleCityChange}
+        onYearRangeChange={handleYearRangeChange}
         loading={loading}
       />
       <StatsPanel
         selectedCity={selectedCity}
-        activeCategories={activeCategories}
-        onCategoryToggle={handleCategoryToggle}
+        yearRange={yearRange}
+        activeCodes={activeCodes}
+        onCodesChange={handleCodesChange}
+        crimeRecords={crimeRecords}
       />
       <TimeSlider onTimeChange={handleTimeChange} />
     </div>

@@ -50,8 +50,9 @@ export function createCrimesRouter(pool: pg.Pool): Router {
       res.status(400).json({ error: `Invalid city. Must be one of: ${[...VALID_CITIES].join(', ')}` });
       return;
     }
-    if (!groupBy || (groupBy !== 'hour' && groupBy !== 'nibrs_category')) {
-      res.status(400).json({ error: 'Invalid groupBy. Must be "hour" or "nibrs_category".' });
+    const validGroupBy = ['hour', 'nibrs_category', 'nibrs_code'];
+    if (!groupBy || !validGroupBy.includes(groupBy as string)) {
+      res.status(400).json({ error: `Invalid groupBy. Must be one of: ${validGroupBy.join(', ')}` });
       return;
     }
 
@@ -73,14 +74,26 @@ export function createCrimesRouter(pool: pg.Pool): Router {
     }
 
     try {
-      const groupCol = groupBy === 'hour' ? 'occurred_hour' : 'nibrs_category';
+      const groupColMap: Record<string, string> = {
+        hour: 'occurred_hour',
+        nibrs_category: 'nibrs_category',
+        nibrs_code: 'nibrs_code',
+      };
+      const groupCol = groupColMap[groupBy as string];
+      // For nibrs_code, also return the parent category for grouping
+      const selectExtra = groupBy === 'nibrs_code' ? ', nibrs_category as category' : '';
+      const groupExtra = groupBy === 'nibrs_code' ? ', nibrs_category' : '';
       const result = await pool.query(
-        `SELECT ${groupCol} as key, COUNT(*) as count FROM crime_incidents ${whereClause} GROUP BY ${groupCol} ORDER BY ${groupCol}`,
+        `SELECT ${groupCol} as key, COUNT(*) as count${selectExtra} FROM crime_incidents ${whereClause} GROUP BY ${groupCol}${groupExtra} ORDER BY count DESC`,
         params,
       );
 
       res.json({
-        data: result.rows.map(r => ({ key: r.key, count: Number(r.count) })),
+        data: result.rows.map(r => ({
+          key: r.key,
+          count: Number(r.count),
+          ...(r.category ? { category: r.category } : {}),
+        })),
         groupBy,
         city,
       });
