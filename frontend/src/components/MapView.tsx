@@ -26,10 +26,11 @@ const ROUTE_LAYER_ID = 'avatar-route-line';
 interface MapViewProps {
   selectedHour: number;
   selectedCity: CityId;
+  activeCategories: Set<string>;
   onDataLoaded?: () => void;
 }
 
-export default function MapView({ selectedHour, selectedCity, onDataLoaded }: MapViewProps) {
+export default function MapView({ selectedHour, selectedCity, activeCategories, onDataLoaded }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const avatarMarkerRef = useRef<maplibregl.Marker | null>(null);
@@ -118,7 +119,7 @@ export default function MapView({ selectedHour, selectedCity, onDataLoaded }: Ma
 
   }, [selectedCity]);
 
-  // Update time filter and avatar position when selectedHour changes
+  // Update time filter, category filter, and avatar position
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getLayer(CRIME_LAYER_ID)) return;
@@ -126,20 +127,27 @@ export default function MapView({ selectedHour, selectedCity, onDataLoaded }: Ma
     const fromHour = (selectedHour - TIME_WINDOW + 24) % 24;
     const toHour = (selectedHour + TIME_WINDOW) % 24;
 
-    let filter: maplibregl.FilterSpecification;
+    // Time range filter
+    let timeFilter: maplibregl.FilterSpecification;
     if (fromHour <= toHour) {
-      filter = ['all',
+      timeFilter = ['all',
         ['>=', ['get', 'occurred_hour'], fromHour],
         ['<=', ['get', 'occurred_hour'], toHour],
       ];
     } else {
-      filter = ['any',
+      timeFilter = ['any',
         ['>=', ['get', 'occurred_hour'], fromHour],
         ['<=', ['get', 'occurred_hour'], toHour],
       ];
     }
 
-    map.setFilter(CRIME_LAYER_ID, filter);
+    // Category filter
+    const categoryFilter: maplibregl.FilterSpecification = [
+      'in', ['get', 'nibrs_category'], ['literal', [...activeCategories]],
+    ];
+
+    // Combine both filters
+    map.setFilter(CRIME_LAYER_ID, ['all', timeFilter, categoryFilter]);
 
     // Update avatar position
     if (avatarMarkerRef.current) {
@@ -150,7 +158,7 @@ export default function MapView({ selectedHour, selectedCity, onDataLoaded }: Ma
 
     // Day/night building color transition
     updateDayNightStyle(map, selectedHour);
-  }, [selectedHour]);
+  }, [selectedHour, activeCategories]);
 
   return (
     <div

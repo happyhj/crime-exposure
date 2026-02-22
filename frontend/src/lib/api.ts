@@ -35,3 +35,26 @@ export async function fetchCrimes(params: {
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
 }
+
+export interface StatsEntry {
+  group: string;
+  count: number;
+}
+
+export interface StatsResponse {
+  data: StatsEntry[];
+}
+
+export async function fetchCrimeStats(params: {
+  city: string;
+  groupBy: 'hour' | 'nibrs_category';
+}): Promise<StatsResponse> {
+  const searchParams = new URLSearchParams({
+    city: params.city,
+    groupBy: params.groupBy,
+  });
+
+  const res = await fetch(`/api/crimes/stats?${searchParams}`);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
