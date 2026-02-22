@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import pg from 'pg';
+import { createCrimesRouter } from './routes/crimes.js';
 
 const { Pool } = pg;
 
@@ -31,8 +32,8 @@ export function createApp(config: AppConfig) {
     }
   });
 
-  // Attach pool for use in route handlers
-  app.locals.pool = pool;
+  // Routes
+  app.use('/api/crimes', createCrimesRouter(pool));
 
   return { app, pool };
 }
