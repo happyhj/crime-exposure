@@ -5,6 +5,7 @@ import { fetchCrimes } from '../lib/api.js';
 import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
 import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
 import { getAvatarPosition, getRouteGeoJSON } from '../lib/avatar-route.js';
+import { getSunPosition } from '../lib/sun-position.js';
 import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
@@ -341,6 +342,26 @@ function updateDayNightStyle(map: maplibregl.Map, hour: number) {
     map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', night ? '#333' : '#fff');
     map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', night ? 0.85 : 0.7);
   }
+
+  // Update light direction based on sun position
+  updateSunLight(map, hour);
+}
+
+function updateSunLight(map: maplibregl.Map, hour: number) {
+  const sun = getSunPosition(hour);
+  const night = isNightTime(hour);
+
+  // MapLibre light: anchor 'map' for realistic directional light
+  // azimuth: direction light comes FROM (in degrees, 0=north)
+  // altitude: angle above horizon (higher = less shadow)
+  const intensity = night ? 0.3 : 0.4 + 0.2 * Math.sin((sun.altitude / 90) * Math.PI / 2);
+
+  map.setLight({
+    anchor: 'map',
+    position: [1.5, sun.azimuth, sun.altitude],
+    intensity,
+    color: night ? '#1a1a2e' : '#fff',
+  });
 }
 
 async function loadBeatIndex(): Promise<BeatIndex | undefined> {
