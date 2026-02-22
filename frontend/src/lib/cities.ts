@@ -57,7 +57,7 @@ export const CITIES: Record<string, CityConfig> = {
     name: 'Los Angeles',
     center: [-118.2437, 34.0522],
     zoom: 12,
-    beatsPath: null, // LA reporting districts not yet available
+    beatsPath: null,
     routeCoords: [
       [-118.2553, 34.0583],  // Grand Park / City Hall
       [-118.2510, 34.0563],  // Little Tokyo
@@ -65,6 +65,20 @@ export const CITIES: Record<string, CityConfig> = {
       [-118.2500, 34.0407],  // SCI-Arc
       [-118.2615, 34.0480],  // Pershing Square
       [-118.2680, 34.0510],  // Staples Center area
+    ],
+  },
+  nyc: {
+    name: 'New York City',
+    center: [-73.9857, 40.7484],
+    zoom: 12,
+    beatsPath: null,
+    routeCoords: [
+      [-73.9857, 40.7484],   // Empire State Building
+      [-73.9851, 40.7580],   // Times Square
+      [-73.9712, 40.7644],   // Central Park South
+      [-73.9654, 40.7829],   // Metropolitan Museum
+      [-73.9776, 40.7614],   // MoMA
+      [-74.0060, 40.7128],   // Wall Street
     ],
   },
 };

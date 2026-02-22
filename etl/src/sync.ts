@@ -4,9 +4,10 @@ import { SeattleAdapter } from './adapters/seattle.js';
 import { ChicagoAdapter } from './adapters/chicago.js';
 import { LAAdapter } from './adapters/la.js';
 import { DallasAdapter } from './adapters/dallas.js';
+import { NYCAdapter } from './adapters/nyc.js';
 import { CrimeDb, getDbConfig } from './db.js';
 
-const SUPPORTED_CITIES: City[] = ['seattle', 'chicago', 'la', 'dallas'];
+const SUPPORTED_CITIES: City[] = ['seattle', 'chicago', 'la', 'dallas', 'nyc'];
 const LOOKBACK_DAYS = 10;
 
 function getDateRange(mode: 'full' | 'incremental'): { from: string; to: string } {
@@ -33,6 +34,8 @@ function createAdapter(city: City): CityAdapter {
       return new LAAdapter(appToken);
     case 'dallas':
       return new DallasAdapter(appToken);
+    case 'nyc':
+      return new NYCAdapter(appToken);
     default:
       throw new Error(`Adapter not yet implemented for city: ${city}`);
   }
