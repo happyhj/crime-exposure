@@ -407,3 +407,427 @@ Phase 5: 추가 도시 + 확장
 - 경찰 dispatch의 최소 지리 단위
 - 모든 신고는 beat에 할당됨 (좌표 geocoding 실패와 무관)
 - Boundary polygon은 각 도시 오픈 데이터 포털에서 GeoJSON으로 공개
+
+---
+
+## 11. Ralph Loop 작업 프로토콜
+
+> 이 섹션은 Claude Code (Ralph loop)가 자율적으로 작업할 때 따라야 할 규칙이다.
+
+### 11.1 작업 흐름
+
+```
+1. gh issue list --label "priority:critical-path" --state open 으로 다음 작업 확인
+2. 가장 낮은 번호(= 가장 높은 우선순위)의 open issue를 선택
+3. 해당 issue에 🚧 작업 시작 코멘트
+4. 구현
+5. 중간 의사결정이 있으면 issue에 💡 의사결정 코멘트
+6. 구현 완료 → 테스트 통과 확인
+7. git commit (issue 번호 참조)
+8. issue에 ✅ 완료 코멘트 → issue close
+9. 다음 issue로 이동
+```
+
+### 11.2 GitHub Issue 코멘트 규칙
+
+**작업 시작 시:**
+```bash
+gh issue comment <NUMBER> --body "🚧 **작업 시작**
+
+**접근 방식**: [어떻게 구현할 것인지 1-3줄 요약]
+**예상 파일**: [생성/수정할 주요 파일 목록]"
+```
+
+**의사결정 발생 시:**
+```bash
+gh issue comment <NUMBER> --body "💡 **의사결정**
+
+**상황**: [무엇을 결정해야 했는지]
+**선택지**: 
+- A: [옵션 A 설명]
+- B: [옵션 B 설명]
+**결정**: [선택한 옵션]
+**이유**: [왜 이걸 선택했는지]"
+```
+
+**구현 중 문제 발견 시:**
+```bash
+gh issue comment <NUMBER> --body "⚠️ **이슈 발견**
+
+**문제**: [무엇이 예상과 달랐는지]
+**영향**: [다른 작업에 미치는 영향]
+**대응**: [어떻게 해결했는지 / 할 것인지]"
+```
+
+**작업 완료 시:**
+```bash
+gh issue comment <NUMBER> --body "✅ **구현 완료**
+
+**변경 사항**:
+- [주요 변경 1]
+- [주요 변경 2]
+
+**테스트 결과**: [테스트 통과 여부, 커버리지 등]
+**커밋**: [커밋 해시 또는 요약]
+**다음 작업에 참고할 점**: [있으면 기록]"
+
+gh issue close <NUMBER>
+```
+
+### 11.3 Git Commit 규칙
+
+```
+feat(etl): implement Seattle adapter (#6)
+fix(api): handle null coordinates in spatial query (#14)
+chore(setup): add Docker Compose for PostgreSQL (#2)
+```
+
+- 항상 issue 번호를 `(#N)` 형태로 포함
+- conventional commits 형식: `feat|fix|chore|docs|refactor|test`
+- scope: `etl|api|frontend|setup`
+
+### 11.4 critical-path 이슈 소진 시
+
+`priority:critical-path` 이슈가 모두 닫히면, 같은 phase의 나머지 이슈를 처리한다.
+Phase 순서: P0 → P1 → P2 → P3 → P4 → P5.
+
+```bash
+# critical-path 소진 후
+gh issue list --label "phase:1-etl" --state open
+# 남은 이슈 중 가장 낮은 번호부터 처리
+```
+
+### 11.5 블로커 대응
+
+구현 중 다른 이슈가 선행되어야 한다고 판단되면:
+
+```bash
+gh issue comment <CURRENT> --body "🔒 **블로커**
+
+이 작업은 #<BLOCKER_NUMBER> 완료 후 진행 가능.
+**이유**: [왜 선행되어야 하는지]
+
+→ #<BLOCKER_NUMBER> 먼저 진행합니다."
+```
+
+그리고 blocker 이슈를 먼저 처리한다.
+
+### 11.6 하지 말아야 할 것
+
+- ❌ 기획서(섹션 1~10)의 기술 결정을 변경하지 마라 (MapLibre→Mapbox 변경 금지 등)
+- ❌ 새로운 의존성을 추가할 때 이유 없이 추가하지 마라 (issue 코멘트에 근거 필수)
+- ❌ 기획서에 없는 기능을 임의로 추가하지 마라
+- ❌ 테스트 없이 issue를 닫지 마라
+- ❌ 한 커밋에 여러 이슈의 작업을 섞지 마라
+
+### 11.7 커밋 전 필수 검증 (verify gate)
+
+**모든 커밋 전에 반드시 실행:**
+
+```bash
+npm run verify   # = tsc --noEmit && eslint . && npm run test:all
+```
+
+이 명령이 실패하면:
+1. 커밋하지 마라
+2. 실패 원인을 수정하라
+3. 수정 후 다시 `npm run verify`
+4. 3회 시도 후에도 실패 → issue에 ⚠️ 코멘트 + 블로커 기록 → 다음 이슈로 이동
+
+**이전에 통과했던 테스트가 깨지면 = regression**. 새 코드가 기존 기능을 깨트린 것이므로 반드시 수정 후 커밋하라.
+
+
+---
+
+## 12. 테스트 전략
+
+> 모든 코드 변경은 테스트를 동반해야 한다. Ralph loop은 매 이슈 완료 시 **전체 테스트 스위트**를 실행하여 기존 기능이 깨지지 않았음을 확인한다.
+
+### 12.1 테스트 프레임워크
+
+| 영역 | 프레임워크 | 이유 |
+|------|-----------|------|
+| ETL (unit + integ) | Vitest | TypeScript 네이티브, 빠른 실행, ESM 지원 |
+| API (unit + integ) | Vitest + Supertest | HTTP 엔드포인트 테스트에 Supertest 표준 |
+| Frontend | Vitest + React Testing Library | MapLibre 로직은 unit, UI는 RTL |
+| E2E pipeline | Vitest | ETL→DB→API 전체 흐름 |
+
+**왜 Vitest**: Jest 대비 TypeScript/ESM 설정이 단순하고, 모든 패키지에서 통일 가능. monorepo에서 `vitest --workspace` 한 번으로 전체 실행.
+
+### 12.2 테스트 3 레이어
+
+#### Layer 1: Unit Test (외부 의존성 없음, 모킹)
+
+빠르고 격리된 테스트. DB, 네트워크, 파일시스템 접근 없음.
+
+**ETL unit 테스트 예시:**
+```typescript
+// etl/__tests__/unit/seattle-adapter.test.ts
+describe('SeattleAdapter', () => {
+  describe('detectSentinel', () => {
+    it('REDACTED를 missing으로 감지', () => {
+      expect(adapter.isCoordMissing('REDACTED')).toBe(true);
+    });
+    it('-1.0을 missing으로 감지', () => {
+      expect(adapter.isCoordMissing('-1.0')).toBe(true);
+    });
+    it('정상 좌표는 통과', () => {
+      expect(adapter.isCoordMissing('47.6062')).toBe(false);
+    });
+  });
+
+  describe('transform', () => {
+    it('Seattle raw record → StandardCrimeRecord 변환', () => {
+      const raw = { /* Seattle API 응답 샘플 */ };
+      const result = adapter.transform(raw);
+      expect(result.city).toBe('seattle');
+      expect(result.nibrs_code).toMatch(/^\d{2,3}[A-Z]?$/);
+      expect(result.nibrs_category).toBeOneOf(['Violent','Property','Society','Other']);
+      expect(result.coord_precision).toBeOneOf(['block','beat']);
+    });
+    it('좌표 REDACTED 시 coord_precision=beat', () => {
+      const raw = { latitude: 'REDACTED', beat: 'F3', /* ... */ };
+      const result = adapter.transform(raw);
+      expect(result.latitude).toBeNull();
+      expect(result.coord_precision).toBe('beat');
+    });
+  });
+});
+
+// etl/__tests__/unit/chicago-adapter.test.ts
+describe('ChicagoAdapter', () => {
+  describe('fbi_code → NIBRS 매핑', () => {
+    it('01A → 09A (Murder)', () => {
+      expect(mapFbiToNibrs('01A')).toEqual({ code: '09A', category: 'Violent' });
+    });
+    it('알 수 없는 코드 → Other', () => {
+      expect(mapFbiToNibrs('99Z')).toEqual({ code: '99Z', category: 'Other' });
+    });
+  });
+
+  describe('날짜 파싱', () => {
+    it('MM/DD/YYYY HH:MI:SS AM 형식 파싱', () => {
+      const result = parseChicagoDate('01/15/2024 02:30:00 PM');
+      expect(result.date).toBe('2024-01-15');
+      expect(result.hour).toBe(14);
+    });
+  });
+});
+```
+
+**API unit 테스트 예시:**
+```typescript
+// api/__tests__/unit/query-builder.test.ts
+describe('QueryBuilder', () => {
+  it('city + date range 쿼리 생성', () => {
+    const sql = buildCrimeQuery({ city: 'seattle', from: '2024-01', to: '2024-12' });
+    expect(sql).toContain("city = 'seattle'");
+    expect(sql).toContain("occurred_date >= '2024-01-01'");
+  });
+  it('radius 파라미터를 meters로 변환', () => {
+    expect(parseRadius('2km')).toBe(2000);
+    expect(parseRadius('500m')).toBe(500);
+  });
+});
+```
+
+#### Layer 2: Integration Test (실제 DB 연동)
+
+Docker의 PostgreSQL에 연결하여 실제 쿼리 결과를 검증.
+
+```typescript
+// etl/__tests__/integration/db-upsert.test.ts
+describe('DB Upsert (integration)', () => {
+  beforeAll(async () => {
+    // 테스트용 DB 연결 (docker-compose.test.yml)
+    await db.connect();
+    await db.query('TRUNCATE crime_incidents');
+  });
+
+  afterAll(async () => {
+    await db.disconnect();
+  });
+
+  it('StandardCrimeRecord 배치 upsert 성공', async () => {
+    const records = generateTestRecords(100);
+    await upsertBatch(records);
+    const { rows } = await db.query('SELECT COUNT(*) FROM crime_incidents');
+    expect(Number(rows[0].count)).toBe(100);
+  });
+
+  it('동일 데이터 재실행 시 중복 없음', async () => {
+    const records = generateTestRecords(100); // 같은 incident_id
+    await upsertBatch(records);
+    const { rows } = await db.query('SELECT COUNT(*) FROM crime_incidents');
+    expect(Number(rows[0].count)).toBe(100); // 여전히 100
+  });
+
+  it('coord_precision=beat 레코드 좌표 NULL 확인', async () => {
+    const record = generateTestRecord({ coordPrecision: 'beat' });
+    await upsertBatch([record]);
+    const { rows } = await db.query(
+      'SELECT latitude, longitude, coord_precision FROM crime_incidents WHERE incident_id = $1',
+      [record.incident_id]
+    );
+    expect(rows[0].latitude).toBeNull();
+    expect(rows[0].coord_precision).toBe('beat');
+  });
+});
+
+// api/__tests__/integration/crimes-endpoint.test.ts
+describe('GET /api/crimes (integration)', () => {
+  beforeAll(async () => {
+    // 시드 데이터 적재
+    await seedTestData();
+    app = await createApp();
+  });
+
+  it('도시별 범죄 목록 반환', async () => {
+    const res = await supertest(app)
+      .get('/api/crimes?city=seattle&from=2024-01&to=2024-12')
+      .expect(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    expect(res.body.data[0]).toHaveProperty('nibrs_code');
+    expect(res.body.meta).toHaveProperty('total');
+  });
+
+  it('반경 검색 PostGIS 동작', async () => {
+    const res = await supertest(app)
+      .get('/api/crimes?lat=47.6062&lon=-122.3321&radius=1km')
+      .expect(200);
+    // 모든 결과가 1km 이내인지 검증
+    res.body.data.forEach(crime => {
+      const dist = haversine(47.6062, -122.3321, crime.latitude, crime.longitude);
+      expect(dist).toBeLessThanOrEqual(1000);
+    });
+  });
+
+  it('잘못된 city → 400', async () => {
+    await supertest(app)
+      .get('/api/crimes?city=invalid&from=2024-01&to=2024-12')
+      .expect(400);
+  });
+});
+```
+
+#### Layer 3: Socrata API 스키마 검증 (외부 API 계약 테스트)
+
+실제 Socrata API를 호출해서 응답 스키마가 바뀌지 않았는지 확인.
+이 테스트가 깨지면 = 데이터 소스가 변경된 것 → 어댑터 수정 필요.
+
+```typescript
+// etl/__tests__/contract/socrata-schema.test.ts
+describe('Socrata API Contract', () => {
+  it('Seattle 엔드포인트 스키마 검증', async () => {
+    const res = await fetch(
+      'https://data.seattle.gov/resource/tazs-3rd5.json?$limit=1'
+    );
+    const [row] = await res.json();
+    // 우리가 의존하는 필드들이 존재하는지
+    expect(row).toHaveProperty('offense_id');
+    expect(row).toHaveProperty('offense_start_datetime');
+    expect(row).toHaveProperty('nibrs_offense_code');  // NIBRS 네이티브
+    expect(row).toHaveProperty('latitude');
+    expect(row).toHaveProperty('beat');
+    expect(row).toHaveProperty('mcpp');        // neighborhood
+    expect(row).toHaveProperty('precinct');
+  });
+
+  it('Chicago 엔드포인트 스키마 검증', async () => {
+    const res = await fetch(
+      'https://data.cityofchicago.org/resource/ijzp-q8t2.json?$limit=1'
+    );
+    const [row] = await res.json();
+    expect(row).toHaveProperty('id');
+    expect(row).toHaveProperty('date');
+    expect(row).toHaveProperty('fbi_code');    // 핵심: 이 필드가 사라지면 매핑 전략 변경 필요
+    expect(row).toHaveProperty('latitude');
+    expect(row).toHaveProperty('beat');
+    expect(row).toHaveProperty('community_area');
+    expect(row).toHaveProperty('district');
+  });
+});
+```
+
+### 12.3 테스트 실행 구조
+
+```
+/package.json (root)
+  scripts:
+    "test":        "vitest run --workspace"          # unit만 (빠름, <10초)
+    "test:watch":  "vitest --workspace"               # watch 모드
+    "test:integ":  "vitest run --workspace --project integ"  # integration (DB 필요)
+    "test:contract": "vitest run --workspace --project contract"  # Socrata API 확인
+    "test:all":    "vitest run --workspace"            # 전체
+    "verify":      "tsc --noEmit && eslint . && vitest run --workspace"  # CI 풀 검증
+```
+
+### 12.4 테스트용 Docker 환경
+
+```yaml
+# docker-compose.test.yml
+services:
+  test-db:
+    image: postgis/postgis:15-3.4
+    ports: ["5433:5432"]    # 개발 DB(5432)와 분리
+    environment:
+      POSTGRES_DB: crime_test
+      POSTGRES_USER: test
+      POSTGRES_PASSWORD: test
+    tmpfs: /var/lib/postgresql/data  # RAM에서 실행 = 빠름
+```
+
+Integration 테스트는 이 test DB를 사용. 매 테스트 전 TRUNCATE로 깨끗한 상태에서 시작.
+
+### 12.5 Ralph Loop 테스트 규칙 (섹션 11 보충)
+
+Ralph는 매 이슈 완료 시 반드시 아래를 실행한다:
+
+```bash
+# 1. 타입 체크
+tsc --noEmit
+
+# 2. 린트
+eslint .
+
+# 3. 전체 테스트 (unit + integration)
+npm run test:all
+
+# 4. 모두 통과해야만 커밋 + issue close
+```
+
+**테스트가 실패하면:**
+- issue에 ⚠️ 코멘트로 실패 내용 기록
+- 수정 시도
+- 3번 시도 후에도 실패 시 → issue에 블로커 기록하고 다음 이슈로 이동
+
+**새 기능 추가 시 최소 테스트:**
+- ETL 어댑터: sentinel 감지, transform 변환, 매핑 커버리지 100%
+- API 엔드포인트: 정상 응답, 400/404 에러 케이스, 빈 결과
+- Frontend 로직: 데이터 변환, 필터링 로직
+
+### 12.6 Fixture / Seed 데이터
+
+```
+/etl/__tests__/fixtures/
+  seattle-raw-sample.json     # Seattle API 응답 5건 (정상/REDACTED/missing 포함)
+  chicago-raw-sample.json     # Chicago API 응답 5건 (각 fbi_code 타입 포함)
+  seed-crime-records.json     # StandardCrimeRecord 50건 (API integration 테스트용)
+```
+
+Fixture는 실제 API 응답을 캡처하여 저장. 테스트 안정성을 위해 실제 API가 아닌 fixture 사용 (contract 테스트 제외).
+
+### 12.7 CI 고려사항 (MVP 이후)
+
+현재 MVP는 로컬 실행이지만, GitHub Actions 추가 시:
+
+```yaml
+# .github/workflows/test.yml (참고용, MVP에서는 미구현)
+jobs:
+  test:
+    services:
+      postgres:
+        image: postgis/postgis:15-3.4
+    steps:
+      - run: npm run verify
+```
