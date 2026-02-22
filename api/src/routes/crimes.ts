@@ -360,27 +360,111 @@ async function handleRadiusSearch(req: Request, res: Response, pool: pg.Pool, li
     return;
   }
 
-  try {
-    const whereClause = `WHERE latitude IS NOT NULL AND ST_DWithin(
+  // Optional filters
+  const { city, nibrs_category, hour_start, hour_end, from, to } = req.query;
+
+  if (city && (typeof city !== 'string' || !VALID_CITIES.has(city))) {
+    res.status(400).json({ error: `Invalid city. Must be one of: ${[...VALID_CITIES].join(', ')}` });
+    return;
+  }
+  if (nibrs_category && !VALID_CATEGORIES.has(nibrs_category as string)) {
+    res.status(400).json({ error: `Invalid nibrs_category. Must be one of: ${[...VALID_CATEGORIES].join(', ')}` });
+    return;
+  }
+
+  const params: unknown[] = [lon, lat, radiusMeters];
+  let paramIdx = 4;
+  let whereClause = `WHERE latitude IS NOT NULL AND ST_DWithin(
       ST_MakePoint(longitude, latitude)::geography,
       ST_MakePoint($1, $2)::geography,
       $3
     )`;
 
+  if (city) {
+    whereClause += ` AND city = $${paramIdx}`;
+    params.push(city);
+    paramIdx++;
+  }
+
+  if (nibrs_category) {
+    whereClause += ` AND nibrs_category = $${paramIdx}`;
+    params.push(nibrs_category);
+    paramIdx++;
+  }
+
+  // Hour range filter with wrap-around support
+  if (hour_start != null && hour_end != null) {
+    const hs = Number(hour_start);
+    const he = Number(hour_end);
+    if (!isNaN(hs) && !isNaN(he) && hs >= 0 && hs <= 23 && he >= 0 && he <= 23) {
+      if (hs <= he) {
+        whereClause += ` AND occurred_hour >= $${paramIdx} AND occurred_hour <= $${paramIdx + 1}`;
+      } else {
+        whereClause += ` AND (occurred_hour >= $${paramIdx} OR occurred_hour <= $${paramIdx + 1})`;
+      }
+      params.push(hs, he);
+      paramIdx += 2;
+    }
+  } else if (hour_start != null) {
+    const hs = Number(hour_start);
+    if (!isNaN(hs) && hs >= 0 && hs <= 23) {
+      whereClause += ` AND occurred_hour >= $${paramIdx}`;
+      params.push(hs);
+      paramIdx++;
+    }
+  } else if (hour_end != null) {
+    const he = Number(hour_end);
+    if (!isNaN(he) && he >= 0 && he <= 23) {
+      whereClause += ` AND occurred_hour <= $${paramIdx}`;
+      params.push(he);
+      paramIdx++;
+    }
+  }
+
+  // Date range filter
+  if (from && typeof from === 'string' && validateDate(from)) {
+    whereClause += ` AND occurred_date >= $${paramIdx}`;
+    params.push(`${from}-01`);
+    paramIdx++;
+  }
+  if (to && typeof to === 'string' && validateDate(to)) {
+    const [toYear, toMonth] = to.split('-').map(Number);
+    const toDate = new Date(toYear, toMonth, 0).toISOString().slice(0, 10);
+    whereClause += ` AND occurred_date <= $${paramIdx}`;
+    params.push(toDate);
+    paramIdx++;
+  }
+
+  try {
     const countResult = await pool.query(
       `SELECT COUNT(*) FROM crime_incidents ${whereClause}`,
-      [lon, lat, radiusMeters],
+      params,
     );
     const total = Number(countResult.rows[0].count);
 
+    const dataParams = [...params, limit, offset];
     const dataResult = await pool.query(
-      `SELECT * FROM crime_incidents ${whereClause} ORDER BY occurred_date DESC, incident_id LIMIT $4 OFFSET $5`,
-      [lon, lat, radiusMeters, limit, offset],
+      `SELECT * FROM crime_incidents ${whereClause} ORDER BY occurred_date DESC, incident_id LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
+      dataParams,
     );
+
+    // Category breakdown
+    const byCategory: Record<string, number> = { Violent: 0, Property: 0, Society: 0, Other: 0 };
+    for (const row of dataResult.rows) {
+      const cat = row.nibrs_category as string;
+      byCategory[cat] = (byCategory[cat] ?? 0) + 1;
+    }
 
     res.json({
       data: dataResult.rows,
-      meta: { total, limit, offset, radius_meters: radiusMeters },
+      meta: {
+        total,
+        limit,
+        offset,
+        radius_meters: radiusMeters,
+        by_category: byCategory,
+        hour_range: hour_start != null && hour_end != null ? [Number(hour_start), Number(hour_end)] : null,
+      },
     });
   } catch (err) {
     console.error('Error querying radius crimes:', err);
