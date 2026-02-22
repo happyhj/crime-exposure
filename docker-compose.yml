@@ -1,0 +1,19 @@
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-crime_exposure}
+      POSTGRES_USER: ${DB_USER:-crime}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-crime_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-crime}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
