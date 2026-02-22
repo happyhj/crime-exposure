@@ -103,7 +103,184 @@ export function createCrimesRouter(pool: pg.Pool): Router {
     }
   });
 
+  // POST /api/crimes/corridor
+  router.post('/corridor', async (req: Request, res: Response) => {
+    return handleCorridorSearch(req, res, pool);
+  });
+
   return router;
+}
+
+export interface CorridorRequest {
+  route: {
+    type: 'LineString';
+    coordinates: number[][];
+  };
+  buffer_meters?: number;
+  city: string;
+  hour_start?: number;
+  hour_end?: number;
+  from?: string;
+  to?: string;
+}
+
+const MAX_BUFFER = 2000;
+const DEFAULT_BUFFER = 200;
+
+export function validateCorridorRequest(body: unknown): { valid: true; data: CorridorRequest } | { valid: false; error: string } {
+  if (!body || typeof body !== 'object') {
+    return { valid: false, error: 'Request body is required' };
+  }
+
+  const b = body as Record<string, unknown>;
+
+  // city
+  if (!b.city || typeof b.city !== 'string' || !VALID_CITIES.has(b.city)) {
+    return { valid: false, error: `Invalid city. Must be one of: ${[...VALID_CITIES].join(', ')}` };
+  }
+
+  // route
+  if (!b.route || typeof b.route !== 'object') {
+    return { valid: false, error: 'route is required and must be a GeoJSON LineString' };
+  }
+  const route = b.route as Record<string, unknown>;
+  if (route.type !== 'LineString') {
+    return { valid: false, error: 'route.type must be "LineString"' };
+  }
+  if (!Array.isArray(route.coordinates) || route.coordinates.length < 2) {
+    return { valid: false, error: 'route.coordinates must be an array of at least 2 coordinate pairs' };
+  }
+  for (const coord of route.coordinates) {
+    if (!Array.isArray(coord) || coord.length < 2 || typeof coord[0] !== 'number' || typeof coord[1] !== 'number') {
+      return { valid: false, error: 'Each coordinate must be [lon, lat] number pair' };
+    }
+  }
+
+  // buffer_meters
+  const buffer = b.buffer_meters != null ? Number(b.buffer_meters) : DEFAULT_BUFFER;
+  if (isNaN(buffer) || buffer <= 0 || buffer > MAX_BUFFER) {
+    return { valid: false, error: `buffer_meters must be between 1 and ${MAX_BUFFER}` };
+  }
+
+  // hour_start / hour_end
+  if (b.hour_start != null) {
+    const h = Number(b.hour_start);
+    if (isNaN(h) || h < 0 || h > 23 || !Number.isInteger(h)) {
+      return { valid: false, error: 'hour_start must be an integer between 0 and 23' };
+    }
+  }
+  if (b.hour_end != null) {
+    const h = Number(b.hour_end);
+    if (isNaN(h) || h < 0 || h > 23 || !Number.isInteger(h)) {
+      return { valid: false, error: 'hour_end must be an integer between 0 and 23' };
+    }
+  }
+
+  // from / to dates
+  if (b.from != null && (typeof b.from !== 'string' || !validateDate(b.from))) {
+    return { valid: false, error: 'from must be in YYYY-MM format' };
+  }
+  if (b.to != null && (typeof b.to !== 'string' || !validateDate(b.to))) {
+    return { valid: false, error: 'to must be in YYYY-MM format' };
+  }
+
+  return {
+    valid: true,
+    data: {
+      route: route as CorridorRequest['route'],
+      buffer_meters: buffer,
+      city: b.city as string,
+      hour_start: b.hour_start != null ? Number(b.hour_start) : undefined,
+      hour_end: b.hour_end != null ? Number(b.hour_end) : undefined,
+      from: b.from as string | undefined,
+      to: b.to as string | undefined,
+    },
+  };
+}
+
+async function handleCorridorSearch(req: Request, res: Response, pool: pg.Pool) {
+  const validation = validateCorridorRequest(req.body);
+  if (!validation.valid) {
+    res.status(400).json({ error: validation.error });
+    return;
+  }
+
+  const { route, buffer_meters, city, hour_start, hour_end, from, to } = validation.data;
+  const routeGeoJson = JSON.stringify(route);
+  const buffer = buffer_meters ?? DEFAULT_BUFFER;
+
+  const params: unknown[] = [city, routeGeoJson, buffer];
+  let paramIdx = 4;
+  let whereClause = `WHERE city = $1 AND latitude IS NOT NULL AND ST_DWithin(
+    ST_MakePoint(longitude, latitude)::geography,
+    ST_GeomFromGeoJSON($2)::geography,
+    $3
+  )`;
+
+  // Hour range filter — supports wrap-around (e.g. 22 → 6)
+  if (hour_start != null && hour_end != null) {
+    if (hour_start <= hour_end) {
+      whereClause += ` AND occurred_hour >= $${paramIdx} AND occurred_hour <= $${paramIdx + 1}`;
+    } else {
+      // Wrap-around: e.g. 22 to 6 means (>= 22 OR <= 6)
+      whereClause += ` AND (occurred_hour >= $${paramIdx} OR occurred_hour <= $${paramIdx + 1})`;
+    }
+    params.push(hour_start, hour_end);
+    paramIdx += 2;
+  } else if (hour_start != null) {
+    whereClause += ` AND occurred_hour >= $${paramIdx}`;
+    params.push(hour_start);
+    paramIdx++;
+  } else if (hour_end != null) {
+    whereClause += ` AND occurred_hour <= $${paramIdx}`;
+    params.push(hour_end);
+    paramIdx++;
+  }
+
+  // Date range filter
+  if (from) {
+    whereClause += ` AND occurred_date >= $${paramIdx}`;
+    params.push(`${from}-01`);
+    paramIdx++;
+  }
+  if (to) {
+    const [toYear, toMonth] = to.split('-').map(Number);
+    const toDate = new Date(toYear, toMonth, 0).toISOString().slice(0, 10);
+    whereClause += ` AND occurred_date <= $${paramIdx}`;
+    params.push(toDate);
+    paramIdx++;
+  }
+
+  try {
+    // Get crimes with category breakdown
+    const dataResult = await pool.query(
+      `SELECT incident_id, city, occurred_date, occurred_hour, nibrs_code, nibrs_category, latitude, longitude
+       FROM crime_incidents ${whereClause}
+       ORDER BY occurred_date DESC, incident_id
+       LIMIT 50000`,
+      params,
+    );
+
+    // Category breakdown
+    const byCategory: Record<string, number> = { Violent: 0, Property: 0, Society: 0, Other: 0 };
+    for (const row of dataResult.rows) {
+      const cat = row.nibrs_category as string;
+      byCategory[cat] = (byCategory[cat] ?? 0) + 1;
+    }
+
+    res.json({
+      data: dataResult.rows,
+      meta: {
+        total: dataResult.rows.length,
+        buffer_meters: buffer,
+        hour_range: hour_start != null && hour_end != null ? [hour_start, hour_end] : null,
+        by_category: byCategory,
+      },
+    });
+  } catch (err) {
+    console.error('Error querying corridor crimes:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 }
 
 async function handleCitySearch(req: Request, res: Response, pool: pg.Pool, limit: number, offset: number) {
