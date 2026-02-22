@@ -1,0 +1,55 @@
+[
+  {
+    "id": "14109448",
+    "date": "2024-03-15T14:30:00.000",
+    "fbi_code": "06",
+    "primary_type": "THEFT",
+    "latitude": "41.832337226",
+    "longitude": "-87.621793581",
+    "beat": "0211",
+    "district": "002",
+    "community_area": "35"
+  },
+  {
+    "id": "14110082",
+    "date": "2024-06-20T02:15:00.000",
+    "fbi_code": "01A",
+    "primary_type": "HOMICIDE",
+    "latitude": "41.787028931",
+    "longitude": "-87.71159542",
+    "beat": "0822",
+    "district": "008",
+    "community_area": "63"
+  },
+  {
+    "id": "14110100",
+    "date": "2024-01-01T00:00:00.000",
+    "fbi_code": "15",
+    "primary_type": "WEAPONS VIOLATION",
+    "beat": "1234",
+    "district": "012",
+    "community_area": "32"
+  },
+  {
+    "id": "14110200",
+    "date": "2024-09-10T23:45:00.000",
+    "fbi_code": "18",
+    "primary_type": "NARCOTICS",
+    "latitude": "41.900000",
+    "longitude": "-87.650000",
+    "beat": "1811",
+    "district": "018",
+    "community_area": "7"
+  },
+  {
+    "id": "14110300",
+    "date": "2024-07-04T12:00:00.000",
+    "fbi_code": "99",
+    "primary_type": "UNKNOWN",
+    "latitude": "41.850000",
+    "longitude": "-87.700000",
+    "beat": "0500",
+    "district": "005",
+    "community_area": "42"
+  }
+]

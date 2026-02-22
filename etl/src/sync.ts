@@ -1,6 +1,7 @@
 import type { CityAdapter } from './adapters/base-adapter.js';
 import type { City } from './types.js';
 import { SeattleAdapter } from './adapters/seattle.js';
+import { ChicagoAdapter } from './adapters/chicago.js';
 import { CrimeDb, getDbConfig } from './db.js';
 
 const SUPPORTED_CITIES: City[] = ['seattle', 'chicago'];
@@ -24,7 +25,8 @@ function createAdapter(city: City): CityAdapter {
   switch (city) {
     case 'seattle':
       return new SeattleAdapter(appToken);
-    // Chicago, LA, Dallas, NYC adapters will be added here
+    case 'chicago':
+      return new ChicagoAdapter(appToken);
     default:
       throw new Error(`Adapter not yet implemented for city: ${city}`);
   }
