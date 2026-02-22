@@ -6,6 +6,7 @@ import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
 import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
 import { getAvatarPosition, getRouteGeoJSON } from '../lib/avatar-route.js';
 import { getSunPosition } from '../lib/sun-position.js';
+import { getLightingForHour } from '../lib/lighting.js';
 import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
@@ -324,43 +325,34 @@ function addCrimeLayer(map: maplibregl.Map) {
   });
 }
 
-function isNightTime(hour: number): boolean {
-  return hour < 6 || hour >= 20;
-}
-
 function updateDayNightStyle(map: maplibregl.Map, hour: number) {
-  const night = isNightTime(hour);
+  const lighting = getLightingForHour(hour);
 
-  // Update building color for day/night
+  // Update building color with interpolated values
   if (map.getLayer('3d-buildings')) {
-    map.setPaintProperty('3d-buildings', 'fill-extrusion-color', night ? '#334' : '#aaa');
-    map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', night ? 0.8 : 0.6);
+    map.setPaintProperty('3d-buildings', 'fill-extrusion-color', lighting.buildingColor);
+    map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', lighting.buildingOpacity);
   }
 
-  // Update crime point stroke for visibility
+  // Update crime point colors
   if (map.getLayer(CRIME_LAYER_ID)) {
-    map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', night ? '#333' : '#fff');
-    map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', night ? 0.85 : 0.7);
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', lighting.crimeStroke);
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', lighting.crimeOpacity);
   }
 
-  // Update light direction based on sun position
-  updateSunLight(map, hour);
+  // Update light direction and color based on sun position
+  updateSunLight(map, hour, lighting.lightColor);
 }
 
-function updateSunLight(map: maplibregl.Map, hour: number) {
+function updateSunLight(map: maplibregl.Map, hour: number, lightColor: string) {
   const sun = getSunPosition(hour);
-  const night = isNightTime(hour);
-
-  // MapLibre light: anchor 'map' for realistic directional light
-  // azimuth: direction light comes FROM (in degrees, 0=north)
-  // altitude: angle above horizon (higher = less shadow)
-  const intensity = night ? 0.3 : 0.4 + 0.2 * Math.sin((sun.altitude / 90) * Math.PI / 2);
+  const intensity = 0.3 + 0.3 * Math.sin(Math.max(0, sun.altitude / 90) * Math.PI / 2);
 
   map.setLight({
     anchor: 'map',
     position: [1.5, sun.azimuth, sun.altitude],
     intensity,
-    color: night ? '#1a1a2e' : '#fff',
+    color: lightColor,
   });
 }
 
