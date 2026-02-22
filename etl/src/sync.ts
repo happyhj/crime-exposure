@@ -15,7 +15,7 @@ function getDateRange(mode: 'full' | 'incremental'): { from: string; to: string 
   const to = now.toISOString().slice(0, 10);
 
   if (mode === 'full') {
-    return { from: '2023-01-01', to };
+    return { from: '2015-01-01', to };
   }
 
   const lookback = new Date(now);

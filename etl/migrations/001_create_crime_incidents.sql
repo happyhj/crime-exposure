@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS crime_incidents (
     longitude       DECIMAL(11,8),
     district        VARCHAR(10),
     neighborhood    VARCHAR(100),
-    precinct        VARCHAR(20),
+    precinct        VARCHAR(50),
     coord_precision VARCHAR(10)
 );
 
