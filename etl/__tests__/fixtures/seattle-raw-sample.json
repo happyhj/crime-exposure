@@ -1,0 +1,55 @@
+[
+  {
+    "offense_id": "1001",
+    "offense_date": "2024-03-15T14:30:00.000",
+    "nibrs_offense_code": "23H",
+    "nibrs_crime_against_category": "PROPERTY",
+    "latitude": "47.60620000",
+    "longitude": "-122.33210000",
+    "beat": "F3",
+    "precinct": "Southwest",
+    "neighborhood": "HIGHLAND PARK"
+  },
+  {
+    "offense_id": "1002",
+    "offense_date": "2024-06-20T02:15:00.000",
+    "nibrs_offense_code": "13A",
+    "nibrs_crime_against_category": "PERSON",
+    "latitude": "REDACTED",
+    "longitude": "REDACTED",
+    "beat": "D2",
+    "precinct": "West",
+    "neighborhood": "BELLTOWN"
+  },
+  {
+    "offense_id": "1003",
+    "offense_date": "2024-01-01T00:00:00.000",
+    "nibrs_offense_code": "220",
+    "nibrs_crime_against_category": "PROPERTY",
+    "latitude": "-1.0",
+    "longitude": "-1.0",
+    "beat": "J3",
+    "precinct": "North",
+    "neighborhood": "-"
+  },
+  {
+    "offense_id": "1004",
+    "offense_date": "2024-09-10T23:45:00.000",
+    "nibrs_offense_code": "35A",
+    "nibrs_crime_against_category": "SOCIETY",
+    "latitude": "47.68542320",
+    "longitude": "-122.33623019",
+    "beat": "N1",
+    "precinct": "North",
+    "neighborhood": "GREENWOOD"
+  },
+  {
+    "offense_id": "1005",
+    "offense_date": "2024-07-04T12:00:00.000",
+    "nibrs_offense_code": "09A",
+    "nibrs_crime_against_category": "PERSON",
+    "beat": "E3",
+    "precinct": "East",
+    "neighborhood": "CAPITOL HILL"
+  }
+]
