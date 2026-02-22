@@ -1,0 +1,27 @@
+{
+  "name": "crime-exposure",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "etl",
+    "api",
+    "frontend"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integ": "vitest run --project integ",
+    "test:contract": "vitest run --project contract",
+    "test:all": "vitest run",
+    "verify": "tsc --build && eslint . && vitest run",
+    "build": "tsc --build",
+    "clean": "tsc --build --clean"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0",
+    "vitest": "^2.0.0"
+  }
+}
