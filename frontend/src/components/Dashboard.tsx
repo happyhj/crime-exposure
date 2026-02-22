@@ -9,8 +9,11 @@ import type { RouteOverlayData } from '../App.js';
 interface DashboardProps {
   profile: UserProfile;
   onBack: () => void;
+  onExplore?: () => void;
   onRoutesReady?: (routes: RouteOverlayData[]) => void;
 }
+
+type AnalysisStep = 'routing' | 'fetching' | 'scoring' | 'done' | 'error';
 
 interface CandidateResult {
   candidate: Candidate;
@@ -18,6 +21,7 @@ interface CandidateResult {
   score: ExposureResult | null;
   corridorCrimes: CrimeRecord[];
   loading: boolean;
+  step: AnalysisStep;
   error: string | null;
 }
 
@@ -33,7 +37,7 @@ function crimeToScoreCrime(c: CrimeRecord): ScoreCrimeRecord {
 
 const CANDIDATE_COLORS = ['#4fc3f7', '#66bb6a', '#ffa726'];
 
-export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardProps) {
+export default function Dashboard({ profile, onBack, onExplore, onRoutesReady }: DashboardProps) {
   const [results, setResults] = useState<CandidateResult[]>([]);
 
   const analyzeCandidate = useCallback(async (candidate: Candidate, idx: number) => {
@@ -41,7 +45,7 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
 
     setResults(prev => {
       const next = [...prev];
-      next[idx] = { candidate, route: null, score: null, corridorCrimes: [], loading: true, error: null };
+      next[idx] = { candidate, route: null, score: null, corridorCrimes: [], loading: true, step: 'routing', error: null };
       return next;
     });
 
@@ -54,7 +58,7 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
 
       setResults(prev => {
         const next = [...prev];
-        next[idx] = { ...next[idx], route };
+        next[idx] = { ...next[idx], route, step: 'fetching' };
         return next;
       });
 
@@ -96,18 +100,24 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
         household: profile.household,
       };
 
+      setResults(prev => {
+        const next = [...prev];
+        next[idx] = { ...next[idx], step: 'scoring' };
+        return next;
+      });
+
       const score = computeExposureScore(input);
       const crimeData = corridorRes.data as CrimeRecord[];
 
       setResults(prev => {
         const next = [...prev];
-        next[idx] = { ...next[idx], score, corridorCrimes: crimeData, loading: false };
+        next[idx] = { ...next[idx], score, corridorCrimes: crimeData, loading: false, step: 'done' };
         return next;
       });
     } catch (err) {
       setResults(prev => {
         const next = [...prev];
-        next[idx] = { ...next[idx], loading: false, error: String(err) };
+        next[idx] = { ...next[idx], loading: false, step: 'error', error: String(err) };
         return next;
       });
     }
@@ -120,6 +130,7 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
       score: null,
       corridorCrimes: [],
       loading: false,
+      step: 'routing' as AnalysisStep,
       error: null,
     })));
 
@@ -172,9 +183,16 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
         <h3 style={{ margin: 0, color: '#fff', fontSize: 16 }}>
           Crime Exposure Analysis
         </h3>
-        <button onClick={onBack} style={backBtnStyle}>
-          Edit Profile
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button onClick={onBack} style={backBtnStyle}>
+            Edit Profile
+          </button>
+          {onExplore && (
+            <button onClick={onExplore} style={backBtnStyle}>
+              Back to Map
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Candidate Cards */}
@@ -196,10 +214,17 @@ export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardP
   );
 }
 
+const STEP_LABELS: Record<AnalysisStep, string> = {
+  routing: 'Generating route...',
+  fetching: 'Analyzing crime data...',
+  scoring: 'Calculating score...',
+  done: '',
+  error: '',
+};
+
 function CandidateCard({ result, index, isBest }: { result: CandidateResult; index: number; isBest: boolean }) {
-  const { candidate, route, score, loading, error } = result;
-  const colors = ['#4fc3f7', '#66bb6a', '#ffa726'];
-  const color = colors[index % colors.length];
+  const { candidate, route, score, loading, step, error } = result;
+  const color = CANDIDATE_COLORS[index % CANDIDATE_COLORS.length];
   const labels = ['A', 'B', 'C'];
 
   return (
@@ -239,17 +264,30 @@ function CandidateCard({ result, index, isBest }: { result: CandidateResult; ind
         </div>
       </div>
 
-      {/* Loading state */}
+      {/* Loading state with step indicator */}
       {loading && (
-        <div style={{ textAlign: 'center', color: '#888', fontSize: 12, padding: '20px 0' }}>
-          Analyzing...
+        <div style={{ padding: '12px 0' }}>
+          <div style={{ fontSize: 12, color: '#aaa', marginBottom: 8 }}>
+            {STEP_LABELS[step]}
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {(['routing', 'fetching', 'scoring'] as AnalysisStep[]).map(s => (
+              <div key={s} style={{
+                flex: 1,
+                height: 3,
+                borderRadius: 2,
+                background: stepOrder(s) <= stepOrder(step) ? color : 'rgba(255,255,255,0.1)',
+                transition: 'background 0.3s',
+              }} />
+            ))}
+          </div>
         </div>
       )}
 
       {/* Error state */}
       {error && (
         <div style={{ color: '#ef5350', fontSize: 12, padding: '8px 0' }}>
-          Analysis failed
+          Analysis failed: {error.includes('fetch') ? 'Network error' : 'Unable to compute route'}
         </div>
       )}
 
@@ -318,6 +356,16 @@ function SubScoreBar({ label, value, icon }: { label: string; value: number; ico
       </span>
     </div>
   );
+}
+
+function stepOrder(step: AnalysisStep): number {
+  switch (step) {
+    case 'routing': return 1;
+    case 'fetching': return 2;
+    case 'scoring': return 3;
+    case 'done': return 4;
+    case 'error': return 0;
+  }
 }
 
 function gradeColor(grade: string): string {
