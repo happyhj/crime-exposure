@@ -7,15 +7,17 @@ type BeatPolygon = Feature<Polygon | MultiPolygon, { beat: string }>;
 type BeatIndex = Map<string, BeatPolygon>;
 
 /**
- * Build an index from beat code → polygon feature for fast lookup.
+ * Build an index from beat/district code → polygon feature for fast lookup.
+ * @param beatKey - The GeoJSON property name to use as index key (e.g., 'beat', 'BEAT_NUM', 'REPDIST')
  */
 export function buildBeatIndex(
   geojson: FeatureCollection,
+  beatKey = 'beat',
 ): BeatIndex {
   const index: BeatIndex = new Map();
   for (const feature of geojson.features) {
-    const beat = feature.properties?.beat;
-    if (beat && (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon')) {
+    const beat = feature.properties?.[beatKey];
+    if (beat != null && (feature.geometry.type === 'Polygon' || feature.geometry.type === 'MultiPolygon')) {
       index.set(String(beat), feature as BeatPolygon);
     }
   }

@@ -55,11 +55,11 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
-      addBeatBoundaryLayer(map, cityConfig.beatsPath);
+      addBeatBoundaryLayer(map, cityConfig.beatsPath, cityConfig.beatKey);
       addBuildingLayer(map);
       addRouteLayer(map, cityConfig.routeCoords);
       addCrimeLayer(map);
-      loadCrimeData(map, selectedCity, cityConfig.beatsPath).then(() => onDataLoaded?.());
+      loadCrimeData(map, selectedCity, cityConfig.beatsPath, cityConfig.beatKey).then(() => onDataLoaded?.());
 
       // Create avatar marker
       const avatarEl = createAvatarElement();
@@ -100,7 +100,7 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
     });
 
     // Update beat boundaries
-    updateBeatSource(map, cityConfig.beatsPath);
+    updateBeatSource(map, cityConfig.beatsPath, cityConfig.beatKey);
 
     // Update route
     const routeSrc = map.getSource(ROUTE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
@@ -115,7 +115,7 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
     }
 
     // Reload crime data
-    loadCrimeData(map, selectedCity, cityConfig.beatsPath).then(() => onDataLoaded?.());
+    loadCrimeData(map, selectedCity, cityConfig.beatsPath, cityConfig.beatKey).then(() => onDataLoaded?.());
 
   }, [selectedCity]);
 
@@ -179,13 +179,13 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
 
 let hoveredBeatId: string | number | null = null;
 
-function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null) {
+function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null, beatKey: string) {
   const emptyCollection = { type: 'FeatureCollection' as const, features: [] };
 
   map.addSource(BEATS_SOURCE_ID, {
     type: 'geojson',
     data: beatsPath ?? emptyCollection,
-    promoteId: 'beat',
+    promoteId: beatKey,
   });
 
   map.addLayer({
@@ -222,7 +222,7 @@ function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null) {
   // Hover interaction
   map.on('mousemove', BEATS_FILL_LAYER_ID, (e) => {
     if (!e.features?.length) return;
-    const beat = e.features[0].properties.beat;
+    const id = e.features[0].properties[beatKey];
 
     if (hoveredBeatId !== null) {
       map.setFeatureState(
@@ -230,9 +230,9 @@ function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null) {
         { hover: false },
       );
     }
-    hoveredBeatId = beat;
+    hoveredBeatId = id;
     map.setFeatureState(
-      { source: BEATS_SOURCE_ID, id: beat },
+      { source: BEATS_SOURCE_ID, id },
       { hover: true },
     );
     map.getCanvas().style.cursor = 'pointer';
@@ -255,27 +255,54 @@ function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null) {
 
     new maplibregl.Popup()
       .setLngLat(e.lngLat)
-      .setHTML(`
-        <strong>Beat ${props.beat}</strong><br/>
-        ${props.first_precinct ? `Precinct: ${props.first_precinct}<br/>` : ''}
-        ${props.sector ? `Sector: ${props.sector}` : ''}
-      `)
+      .setHTML(formatBeatPopup(props, beatKey))
       .addTo(map);
   });
 }
 
-function updateBeatSource(map: maplibregl.Map, beatsPath: string | null) {
-  const source = map.getSource(BEATS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-  if (!source) return;
-
-  if (beatsPath) {
-    fetch(beatsPath)
-      .then(res => res.json())
-      .then(data => source.setData(data))
-      .catch(() => source.setData({ type: 'FeatureCollection', features: [] }));
-  } else {
-    source.setData({ type: 'FeatureCollection', features: [] });
+function updateBeatSource(map: maplibregl.Map, beatsPath: string | null, beatKey: string) {
+  // Remove existing layers and source, then recreate with new promoteId
+  for (const layerId of [BEATS_FILL_LAYER_ID, BEATS_LINE_LAYER_ID]) {
+    if (map.getLayer(layerId)) map.removeLayer(layerId);
   }
+  // Remove click/hover listeners by removing the source
+  if (map.getSource(BEATS_SOURCE_ID)) map.removeSource(BEATS_SOURCE_ID);
+
+  hoveredBeatId = null;
+  addBeatBoundaryLayer(map, beatsPath, beatKey);
+}
+
+function formatBeatPopup(props: Record<string, unknown>, beatKey: string): string {
+  const id = props[beatKey] ?? 'Unknown';
+
+  // Seattle
+  if (beatKey === 'beat') {
+    return `
+      <strong>Beat ${id}</strong><br/>
+      ${props.first_precinct ? `Precinct: ${props.first_precinct}<br/>` : ''}
+      ${props.sector ? `Sector: ${props.sector}` : ''}
+    `;
+  }
+
+  // Chicago
+  if (beatKey === 'BEAT_NUM') {
+    return `
+      <strong>Beat ${id}</strong><br/>
+      ${props.DISTRICT ? `District: ${props.DISTRICT}<br/>` : ''}
+      ${props.SECTOR ? `Sector: ${props.SECTOR}` : ''}
+    `;
+  }
+
+  // LA
+  if (beatKey === 'REPDIST') {
+    return `
+      <strong>District ${id}</strong><br/>
+      ${props.APREC ? `Division: ${props.APREC}<br/>` : ''}
+      ${props.BUREAU ? `Bureau: ${props.BUREAU}` : ''}
+    `;
+  }
+
+  return `<strong>Area ${id}</strong>`;
 }
 
 function createAvatarElement(): HTMLDivElement {
@@ -426,20 +453,20 @@ function updateSunLight(map: maplibregl.Map, hour: number, lightColor: string) {
   });
 }
 
-async function loadBeatIndex(beatsPath: string | null): Promise<BeatIndex | undefined> {
+async function loadBeatIndex(beatsPath: string | null, beatKey: string): Promise<BeatIndex | undefined> {
   if (!beatsPath) return undefined;
   try {
     const res = await fetch(beatsPath);
     if (!res.ok) return undefined;
     const geojson = await res.json();
-    return buildBeatIndex(geojson);
+    return buildBeatIndex(geojson, beatKey);
   } catch {
     console.warn('Failed to load beat boundaries for coord fallback');
     return undefined;
   }
 }
 
-async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: string | null) {
+async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: string | null, beatKey: string) {
   try {
     const [response, beatIndex] = await Promise.all([
       fetchCrimes({
@@ -448,7 +475,7 @@ async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: strin
         to: '2024-12',
         limit: 50000,
       }),
-      loadBeatIndex(beatsPath),
+      loadBeatIndex(beatsPath, beatKey),
     ]);
 
     const geojson = crimesToGeoJSON(response.data, beatIndex);

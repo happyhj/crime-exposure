@@ -3,6 +3,8 @@ export interface CityConfig {
   center: [number, number];
   zoom: number;
   beatsPath: string | null;
+  /** GeoJSON property name used as the beat/district identifier */
+  beatKey: string;
   /** Avatar route waypoints [lng, lat][] */
   routeCoords: [number, number][];
 }
@@ -13,6 +15,7 @@ export const CITIES: Record<string, CityConfig> = {
     center: [-122.3321, 47.6062],
     zoom: 14,
     beatsPath: '/beats/seattle.geojson',
+    beatKey: 'beat',
     routeCoords: [
       [-122.3374, 47.6101],  // Westlake Center
       [-122.3389, 47.6094],  // Pine St
@@ -29,7 +32,8 @@ export const CITIES: Record<string, CityConfig> = {
     name: 'Chicago',
     center: [-87.6298, 41.8781],
     zoom: 13,
-    beatsPath: null, // Chicago beats GeoJSON not yet available (P5)
+    beatsPath: '/beats/chicago.geojson',
+    beatKey: 'BEAT_NUM',
     routeCoords: [
       [-87.6244, 41.8827],   // Millennium Park
       [-87.6256, 41.8819],   // Art Institute
@@ -44,6 +48,7 @@ export const CITIES: Record<string, CityConfig> = {
     center: [-96.7970, 32.7767],
     zoom: 12,
     beatsPath: null,
+    beatKey: 'beat',
     routeCoords: [
       [-96.7969, 32.7811],   // Dallas Arts District
       [-96.7953, 32.7810],   // Klyde Warren Park
@@ -57,7 +62,8 @@ export const CITIES: Record<string, CityConfig> = {
     name: 'Los Angeles',
     center: [-118.2437, 34.0522],
     zoom: 12,
-    beatsPath: null,
+    beatsPath: '/beats/la.geojson',
+    beatKey: 'REPDIST',
     routeCoords: [
       [-118.2553, 34.0583],  // Grand Park / City Hall
       [-118.2510, 34.0563],  // Little Tokyo
@@ -72,6 +78,7 @@ export const CITIES: Record<string, CityConfig> = {
     center: [-73.9857, 40.7484],
     zoom: 12,
     beatsPath: null,
+    beatKey: 'precinct',
     routeCoords: [
       [-73.9857, 40.7484],   // Empire State Building
       [-73.9851, 40.7580],   // Times Square
