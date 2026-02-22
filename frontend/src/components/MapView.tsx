@@ -119,35 +119,44 @@ export default function MapView({ selectedHour, selectedCity, activeCategories, 
 
   }, [selectedCity]);
 
-  // Update time filter, category filter, and avatar position
+  // Update time-based opacity, category filter, and avatar position
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getLayer(CRIME_LAYER_ID)) return;
 
-    const fromHour = (selectedHour - TIME_WINDOW + 24) % 24;
-    const toHour = (selectedHour + TIME_WINDOW) % 24;
-
-    // Time range filter
-    let timeFilter: maplibregl.FilterSpecification;
-    if (fromHour <= toHour) {
-      timeFilter = ['all',
-        ['>=', ['get', 'occurred_hour'], fromHour],
-        ['<=', ['get', 'occurred_hour'], toHour],
-      ];
-    } else {
-      timeFilter = ['any',
-        ['>=', ['get', 'occurred_hour'], fromHour],
-        ['<=', ['get', 'occurred_hour'], toHour],
-      ];
-    }
-
-    // Category filter
+    // Category filter (hard filter — hidden categories removed)
     const categoryFilter: maplibregl.FilterSpecification = [
       'in', ['get', 'nibrs_category'], ['literal', [...activeCategories]],
     ];
+    map.setFilter(CRIME_LAYER_ID, categoryFilter);
 
-    // Combine both filters
-    map.setFilter(CRIME_LAYER_ID, ['all', timeFilter, categoryFilter]);
+    // Time-based opacity: smooth fade based on circular distance from selectedHour
+    // circularDist = min(|hour - selected|, 24 - |hour - selected|)
+    // opacity = max(0, 1 - circularDist / (TIME_WINDOW + 1))
+    const FADE_RANGE = TIME_WINDOW + 1; // fade out over this many hours beyond window
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', [
+      'max', 0,
+      ['-', 1,
+        ['/',
+          ['min',
+            ['abs', ['-', ['get', 'occurred_hour'], selectedHour]],
+            ['-', 24, ['abs', ['-', ['get', 'occurred_hour'], selectedHour]]],
+          ],
+          FADE_RANGE,
+        ],
+      ],
+    ]);
+
+    // Radius also scales with proximity
+    map.setPaintProperty(CRIME_LAYER_ID, 'circle-radius', [
+      'interpolate', ['linear'],
+      ['min',
+        ['abs', ['-', ['get', 'occurred_hour'], selectedHour]],
+        ['-', 24, ['abs', ['-', ['get', 'occurred_hour'], selectedHour]]],
+      ],
+      0, ['interpolate', ['linear'], ['zoom'], 10, 3, 15, 7],    // at center: larger
+      FADE_RANGE, ['interpolate', ['linear'], ['zoom'], 10, 1, 15, 3], // at edge: smaller
+    ]);
 
     // Update avatar position
     if (avatarMarkerRef.current) {
@@ -399,7 +408,7 @@ function updateDayNightStyle(map: maplibregl.Map, hour: number) {
 
   if (map.getLayer(CRIME_LAYER_ID)) {
     map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', lighting.crimeStroke);
-    map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', lighting.crimeOpacity);
+    // Note: circle-opacity is now data-driven (time-based fade), not set here
   }
 
   updateSunLight(map, hour, lighting.lightColor);
