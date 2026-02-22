@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { fetchCrimes } from '../lib/api.js';
 import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
+import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
 import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
@@ -292,20 +293,40 @@ function updateDayNightStyle(map: maplibregl.Map, hour: number) {
   }
 }
 
+async function loadBeatIndex(): Promise<BeatIndex | undefined> {
+  try {
+    const res = await fetch('/beats/seattle.geojson');
+    if (!res.ok) return undefined;
+    const geojson = await res.json();
+    return buildBeatIndex(geojson);
+  } catch {
+    console.warn('Failed to load beat boundaries for coord fallback');
+    return undefined;
+  }
+}
+
 async function loadCrimeData(map: maplibregl.Map) {
   try {
-    const response = await fetchCrimes({
-      city: 'seattle',
-      from: '2024-01',
-      to: '2024-12',
-      limit: 50000,
-    });
+    const [response, beatIndex] = await Promise.all([
+      fetchCrimes({
+        city: 'seattle',
+        from: '2024-01',
+        to: '2024-12',
+        limit: 50000,
+      }),
+      loadBeatIndex(),
+    ]);
 
-    const geojson = crimesToGeoJSON(response.data);
+    const geojson = crimesToGeoJSON(response.data, beatIndex);
     const source = map.getSource(CRIME_SOURCE_ID) as maplibregl.GeoJSONSource;
     source.setData(geojson);
 
-    console.log(`Loaded ${response.data.length} crime records (${response.meta.total} total)`);
+    const beatFallbackCount = response.data.filter(
+      r => (r.latitude === null || r.longitude === null) && r.district,
+    ).length;
+    console.log(
+      `Loaded ${response.data.length} crime records (${response.meta.total} total, ${beatFallbackCount} beat-fallback)`,
+    );
   } catch (err) {
     console.warn('Failed to load crime data:', err);
   }

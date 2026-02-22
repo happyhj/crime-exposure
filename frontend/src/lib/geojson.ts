@@ -1,4 +1,6 @@
 import type { CrimeRecord } from './api.js';
+import type { BeatIndex } from './beat-fallback.js';
+import { randomPointInBeat } from './beat-fallback.js';
 
 export const CATEGORY_COLORS: Record<string, string> = {
   Violent: '#e53935',   // red
@@ -14,21 +16,47 @@ export interface CrimeFeatureProperties {
   occurred_date: string;
   occurred_hour: number | null;
   neighborhood: string | null;
+  coord_precision: string;
 }
 
 export type CrimeFeature = GeoJSON.Feature<GeoJSON.Point, CrimeFeatureProperties>;
 
-export function crimesToGeoJSON(records: CrimeRecord[]): GeoJSON.FeatureCollection<GeoJSON.Point, CrimeFeatureProperties> {
+/**
+ * Convert crime records to GeoJSON features.
+ * Records with coord_precision='beat' and null coordinates are placed
+ * at random points within their beat polygon (if beatIndex is provided).
+ */
+export function crimesToGeoJSON(
+  records: CrimeRecord[],
+  beatIndex?: BeatIndex,
+): GeoJSON.FeatureCollection<GeoJSON.Point, CrimeFeatureProperties> {
   const features: CrimeFeature[] = [];
 
   for (const r of records) {
-    if (r.latitude === null || r.longitude === null) continue;
+    let lng = r.longitude;
+    let lat = r.latitude;
+    let precision = r.coord_precision ?? 'block';
+
+    // Beat fallback: generate random point within beat polygon
+    if ((lat === null || lng === null) && r.district && beatIndex) {
+      const beatPolygon = beatIndex.get(r.district);
+      if (beatPolygon) {
+        const coords = randomPointInBeat(beatPolygon);
+        if (coords) {
+          [lng, lat] = coords;
+          precision = 'beat';
+        }
+      }
+    }
+
+    // Skip records with no coordinates even after fallback
+    if (lat === null || lng === null) continue;
 
     features.push({
       type: 'Feature',
       geometry: {
         type: 'Point',
-        coordinates: [r.longitude, r.latitude],
+        coordinates: [lng, lat],
       },
       properties: {
         incident_id: r.incident_id,
@@ -37,6 +65,7 @@ export function crimesToGeoJSON(records: CrimeRecord[]): GeoJSON.FeatureCollecti
         occurred_date: r.occurred_date,
         occurred_hour: r.occurred_hour,
         neighborhood: r.neighborhood,
+        coord_precision: precision,
       },
     });
   }
