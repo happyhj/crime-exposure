@@ -4,7 +4,7 @@ export default defineWorkspace([
   {
     test: {
       name: 'unit',
-      include: ['etl/__tests__/unit/**/*.test.ts', 'api/__tests__/unit/**/*.test.ts'],
+      include: ['etl/__tests__/unit/**/*.test.ts', 'api/__tests__/unit/**/*.test.ts', 'frontend/__tests__/unit/**/*.test.ts'],
       passWithNoTests: true,
     },
   },
