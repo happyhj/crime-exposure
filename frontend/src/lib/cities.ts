@@ -39,6 +39,20 @@ export const CITIES: Record<string, CityConfig> = {
       [-87.6340, 41.8700],   // McCormick Place
     ],
   },
+  dallas: {
+    name: 'Dallas',
+    center: [-96.7970, 32.7767],
+    zoom: 12,
+    beatsPath: null,
+    routeCoords: [
+      [-96.7969, 32.7811],   // Dallas Arts District
+      [-96.7953, 32.7810],   // Klyde Warren Park
+      [-96.7970, 32.7797],   // AT&T Discovery District
+      [-96.8009, 32.7767],   // Dealey Plaza
+      [-96.8070, 32.7733],   // Trinity Groves
+      [-96.7945, 32.7817],   // Deep Ellum entrance
+    ],
+  },
   la: {
     name: 'Los Angeles',
     center: [-118.2437, 34.0522],
