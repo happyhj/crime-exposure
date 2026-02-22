@@ -7,12 +7,11 @@ import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
 import { getAvatarPosition, getRouteGeoJSON } from '../lib/avatar-route.js';
 import { getSunPosition } from '../lib/sun-position.js';
 import { getLightingForHour } from '../lib/lighting.js';
+import { CITIES, type CityId } from '../lib/cities.js';
 import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
 
-const SEATTLE_CENTER: [number, number] = [-122.3321, 47.6062];
-const DEFAULT_ZOOM = 14;
 const DEFAULT_PITCH = 60;
 const DEFAULT_BEARING = -17;
 
@@ -26,23 +25,28 @@ const ROUTE_LAYER_ID = 'avatar-route-line';
 
 interface MapViewProps {
   selectedHour: number;
+  selectedCity: CityId;
+  onDataLoaded?: () => void;
 }
 
-export default function MapView({ selectedHour }: MapViewProps) {
+export default function MapView({ selectedHour, selectedCity, onDataLoaded }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const avatarMarkerRef = useRef<maplibregl.Marker | null>(null);
+  const currentCityRef = useRef<CityId>(selectedCity);
 
+  // Initialize map
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
 
+    const cityConfig = CITIES[selectedCity];
     const map = new maplibregl.Map({
       container: mapContainer.current,
       style: MAPTILER_KEY
         ? `https://api.maptiler.com/maps/streets-v2/style.json?key=${MAPTILER_KEY}`
         : 'https://demotiles.maplibre.org/style.json',
-      center: SEATTLE_CENTER,
-      zoom: DEFAULT_ZOOM,
+      center: cityConfig.center,
+      zoom: cityConfig.zoom,
       pitch: DEFAULT_PITCH,
       bearing: DEFAULT_BEARING,
     });
@@ -50,15 +54,15 @@ export default function MapView({ selectedHour }: MapViewProps) {
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
-      addBeatBoundaryLayer(map);
+      addBeatBoundaryLayer(map, cityConfig.beatsPath);
       addBuildingLayer(map);
-      addRouteLayer(map);
+      addRouteLayer(map, cityConfig.routeCoords);
       addCrimeLayer(map);
-      loadCrimeData(map);
+      loadCrimeData(map, selectedCity, cityConfig.beatsPath).then(() => onDataLoaded?.());
 
       // Create avatar marker
       const avatarEl = createAvatarElement();
-      const initialPos = getAvatarPosition(12);
+      const initialPos = getAvatarPosition(12, cityConfig.routeCoords);
       const marker = new maplibregl.Marker({ element: avatarEl })
         .setLngLat(initialPos)
         .addTo(map);
@@ -73,7 +77,46 @@ export default function MapView({ selectedHour }: MapViewProps) {
       map.remove();
       mapRef.current = null;
     };
+
   }, []);
+
+  // Handle city change
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.loaded()) return;
+    if (currentCityRef.current === selectedCity) return;
+
+    currentCityRef.current = selectedCity;
+    const cityConfig = CITIES[selectedCity];
+
+    // Fly to new city
+    map.flyTo({
+      center: cityConfig.center,
+      zoom: cityConfig.zoom,
+      pitch: DEFAULT_PITCH,
+      bearing: DEFAULT_BEARING,
+      duration: 2000,
+    });
+
+    // Update beat boundaries
+    updateBeatSource(map, cityConfig.beatsPath);
+
+    // Update route
+    const routeSrc = map.getSource(ROUTE_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+    if (routeSrc) {
+      routeSrc.setData(getRouteGeoJSON(cityConfig.routeCoords));
+    }
+
+    // Update avatar position
+    if (avatarMarkerRef.current) {
+      const pos = getAvatarPosition(selectedHour, cityConfig.routeCoords);
+      avatarMarkerRef.current.setLngLat(pos);
+    }
+
+    // Reload crime data
+    loadCrimeData(map, selectedCity, cityConfig.beatsPath).then(() => onDataLoaded?.());
+
+  }, [selectedCity]);
 
   // Update time filter and avatar position when selectedHour changes
   useEffect(() => {
@@ -100,7 +143,8 @@ export default function MapView({ selectedHour }: MapViewProps) {
 
     // Update avatar position
     if (avatarMarkerRef.current) {
-      const pos = getAvatarPosition(selectedHour);
+      const cityConfig = CITIES[currentCityRef.current];
+      const pos = getAvatarPosition(selectedHour, cityConfig.routeCoords);
       avatarMarkerRef.current.setLngLat(pos);
     }
 
@@ -118,14 +162,15 @@ export default function MapView({ selectedHour }: MapViewProps) {
 
 let hoveredBeatId: string | number | null = null;
 
-function addBeatBoundaryLayer(map: maplibregl.Map) {
+function addBeatBoundaryLayer(map: maplibregl.Map, beatsPath: string | null) {
+  const emptyCollection = { type: 'FeatureCollection' as const, features: [] };
+
   map.addSource(BEATS_SOURCE_ID, {
     type: 'geojson',
-    data: '/beats/seattle.geojson',
+    data: beatsPath ?? emptyCollection,
     promoteId: 'beat',
   });
 
-  // Semi-transparent fill for all beats
   map.addLayer({
     id: BEATS_FILL_LAYER_ID,
     type: 'fill',
@@ -141,7 +186,6 @@ function addBeatBoundaryLayer(map: maplibregl.Map) {
     },
   });
 
-  // Beat boundary lines
   map.addLayer({
     id: BEATS_LINE_LAYER_ID,
     type: 'line',
@@ -188,7 +232,6 @@ function addBeatBoundaryLayer(map: maplibregl.Map) {
     map.getCanvas().style.cursor = '';
   });
 
-  // Click popup showing beat info
   map.on('click', BEATS_FILL_LAYER_ID, (e) => {
     if (!e.features?.length) return;
     const props = e.features[0].properties;
@@ -204,6 +247,20 @@ function addBeatBoundaryLayer(map: maplibregl.Map) {
   });
 }
 
+function updateBeatSource(map: maplibregl.Map, beatsPath: string | null) {
+  const source = map.getSource(BEATS_SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
+  if (!source) return;
+
+  if (beatsPath) {
+    fetch(beatsPath)
+      .then(res => res.json())
+      .then(data => source.setData(data))
+      .catch(() => source.setData({ type: 'FeatureCollection', features: [] }));
+  } else {
+    source.setData({ type: 'FeatureCollection', features: [] });
+  }
+}
+
 function createAvatarElement(): HTMLDivElement {
   const el = document.createElement('div');
   el.style.width = '20px';
@@ -216,10 +273,10 @@ function createAvatarElement(): HTMLDivElement {
   return el;
 }
 
-function addRouteLayer(map: maplibregl.Map) {
+function addRouteLayer(map: maplibregl.Map, routeCoords: [number, number][]) {
   map.addSource(ROUTE_SOURCE_ID, {
     type: 'geojson',
-    data: getRouteGeoJSON(),
+    data: getRouteGeoJSON(routeCoords),
   });
 
   map.addLayer({
@@ -297,7 +354,6 @@ function addCrimeLayer(map: maplibregl.Map) {
     },
   });
 
-  // Click popup
   map.on('click', CRIME_LAYER_ID, (e) => {
     if (!e.features?.length) return;
     const props = e.features[0].properties;
@@ -328,19 +384,16 @@ function addCrimeLayer(map: maplibregl.Map) {
 function updateDayNightStyle(map: maplibregl.Map, hour: number) {
   const lighting = getLightingForHour(hour);
 
-  // Update building color with interpolated values
   if (map.getLayer('3d-buildings')) {
     map.setPaintProperty('3d-buildings', 'fill-extrusion-color', lighting.buildingColor);
     map.setPaintProperty('3d-buildings', 'fill-extrusion-opacity', lighting.buildingOpacity);
   }
 
-  // Update crime point colors
   if (map.getLayer(CRIME_LAYER_ID)) {
     map.setPaintProperty(CRIME_LAYER_ID, 'circle-stroke-color', lighting.crimeStroke);
     map.setPaintProperty(CRIME_LAYER_ID, 'circle-opacity', lighting.crimeOpacity);
   }
 
-  // Update light direction and color based on sun position
   updateSunLight(map, hour, lighting.lightColor);
 }
 
@@ -356,9 +409,10 @@ function updateSunLight(map: maplibregl.Map, hour: number, lightColor: string) {
   });
 }
 
-async function loadBeatIndex(): Promise<BeatIndex | undefined> {
+async function loadBeatIndex(beatsPath: string | null): Promise<BeatIndex | undefined> {
+  if (!beatsPath) return undefined;
   try {
-    const res = await fetch('/beats/seattle.geojson');
+    const res = await fetch(beatsPath);
     if (!res.ok) return undefined;
     const geojson = await res.json();
     return buildBeatIndex(geojson);
@@ -368,16 +422,16 @@ async function loadBeatIndex(): Promise<BeatIndex | undefined> {
   }
 }
 
-async function loadCrimeData(map: maplibregl.Map) {
+async function loadCrimeData(map: maplibregl.Map, city: CityId, beatsPath: string | null) {
   try {
     const [response, beatIndex] = await Promise.all([
       fetchCrimes({
-        city: 'seattle',
+        city,
         from: '2024-01',
         to: '2024-12',
         limit: 50000,
       }),
-      loadBeatIndex(),
+      loadBeatIndex(beatsPath),
     ]);
 
     const geojson = crimesToGeoJSON(response.data, beatIndex);
@@ -388,9 +442,9 @@ async function loadCrimeData(map: maplibregl.Map) {
       r => (r.latitude === null || r.longitude === null) && r.district,
     ).length;
     console.log(
-      `Loaded ${response.data.length} crime records (${response.meta.total} total, ${beatFallbackCount} beat-fallback)`,
+      `[${city}] Loaded ${response.data.length} crime records (${response.meta.total} total, ${beatFallbackCount} beat-fallback)`,
     );
   } catch (err) {
-    console.warn('Failed to load crime data:', err);
+    console.warn(`Failed to load crime data for ${city}:`, err);
   }
 }

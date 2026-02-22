@@ -1,0 +1,45 @@
+export interface CityConfig {
+  name: string;
+  center: [number, number];
+  zoom: number;
+  beatsPath: string | null;
+  /** Avatar route waypoints [lng, lat][] */
+  routeCoords: [number, number][];
+}
+
+export const CITIES: Record<string, CityConfig> = {
+  seattle: {
+    name: 'Seattle',
+    center: [-122.3321, 47.6062],
+    zoom: 14,
+    beatsPath: '/beats/seattle.geojson',
+    routeCoords: [
+      [-122.3374, 47.6101],  // Westlake Center
+      [-122.3389, 47.6094],  // Pine St
+      [-122.3420, 47.6088],  // Pike Place entrance
+      [-122.3426, 47.6085],  // Pike Place interior
+      [-122.3415, 47.6072],  // 1st Ave south
+      [-122.3400, 47.6055],  // Columbia St
+      [-122.3385, 47.6040],  // Yesler Way
+      [-122.3340, 47.6020],  // Pioneer Square
+      [-122.3320, 47.6005],  // King Street Station
+    ],
+  },
+  chicago: {
+    name: 'Chicago',
+    center: [-87.6298, 41.8781],
+    zoom: 13,
+    beatsPath: null, // Chicago beats GeoJSON not yet available (P5)
+    routeCoords: [
+      [-87.6244, 41.8827],   // Millennium Park
+      [-87.6256, 41.8819],   // Art Institute
+      [-87.6275, 41.8790],   // Grant Park
+      [-87.6298, 41.8756],   // Museum Campus
+      [-87.6316, 41.8723],   // Soldier Field
+      [-87.6340, 41.8700],   // McCormick Place
+    ],
+  },
+};
+
+export const CITY_IDS = Object.keys(CITIES) as Array<keyof typeof CITIES>;
+export type CityId = keyof typeof CITIES;
