@@ -1,2 +1,2 @@
 // Frontend package entry point
-export { };
+export { default as App } from './App.js';
