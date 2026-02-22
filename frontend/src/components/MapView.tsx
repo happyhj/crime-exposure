@@ -14,6 +14,9 @@ const DEFAULT_BEARING = -17;
 
 const CRIME_SOURCE_ID = 'crime-data';
 const CRIME_LAYER_ID = 'crime-points';
+const BEATS_SOURCE_ID = 'beat-boundaries';
+const BEATS_FILL_LAYER_ID = 'beat-fill';
+const BEATS_LINE_LAYER_ID = 'beat-line';
 
 interface MapViewProps {
   selectedHour: number;
@@ -40,6 +43,7 @@ export default function MapView({ selectedHour }: MapViewProps) {
     map.addControl(new maplibregl.NavigationControl(), 'top-right');
 
     map.on('load', () => {
+      addBeatBoundaryLayer(map);
       addBuildingLayer(map);
       addCrimeLayer(map);
       loadCrimeData(map);
@@ -88,6 +92,94 @@ export default function MapView({ selectedHour }: MapViewProps) {
       style={{ width: '100%', height: '100%' }}
     />
   );
+}
+
+let hoveredBeatId: string | number | null = null;
+
+function addBeatBoundaryLayer(map: maplibregl.Map) {
+  map.addSource(BEATS_SOURCE_ID, {
+    type: 'geojson',
+    data: '/beats/seattle.geojson',
+    promoteId: 'beat',
+  });
+
+  // Semi-transparent fill for all beats
+  map.addLayer({
+    id: BEATS_FILL_LAYER_ID,
+    type: 'fill',
+    source: BEATS_SOURCE_ID,
+    paint: {
+      'fill-color': '#627BC1',
+      'fill-opacity': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        0.3,
+        0.05,
+      ],
+    },
+  });
+
+  // Beat boundary lines
+  map.addLayer({
+    id: BEATS_LINE_LAYER_ID,
+    type: 'line',
+    source: BEATS_SOURCE_ID,
+    paint: {
+      'line-color': '#627BC1',
+      'line-width': [
+        'case',
+        ['boolean', ['feature-state', 'hover'], false],
+        2.5,
+        1,
+      ],
+      'line-opacity': 0.6,
+    },
+  });
+
+  // Hover interaction
+  map.on('mousemove', BEATS_FILL_LAYER_ID, (e) => {
+    if (!e.features?.length) return;
+    const beat = e.features[0].properties.beat;
+
+    if (hoveredBeatId !== null) {
+      map.setFeatureState(
+        { source: BEATS_SOURCE_ID, id: hoveredBeatId },
+        { hover: false },
+      );
+    }
+    hoveredBeatId = beat;
+    map.setFeatureState(
+      { source: BEATS_SOURCE_ID, id: beat },
+      { hover: true },
+    );
+    map.getCanvas().style.cursor = 'pointer';
+  });
+
+  map.on('mouseleave', BEATS_FILL_LAYER_ID, () => {
+    if (hoveredBeatId !== null) {
+      map.setFeatureState(
+        { source: BEATS_SOURCE_ID, id: hoveredBeatId },
+        { hover: false },
+      );
+      hoveredBeatId = null;
+    }
+    map.getCanvas().style.cursor = '';
+  });
+
+  // Click popup showing beat info
+  map.on('click', BEATS_FILL_LAYER_ID, (e) => {
+    if (!e.features?.length) return;
+    const props = e.features[0].properties;
+
+    new maplibregl.Popup()
+      .setLngLat(e.lngLat)
+      .setHTML(`
+        <strong>Beat ${props.beat}</strong><br/>
+        ${props.first_precinct ? `Precinct: ${props.first_precinct}<br/>` : ''}
+        ${props.sector ? `Sector: ${props.sector}` : ''}
+      `)
+      .addTo(map);
+  });
 }
 
 function addBuildingLayer(map: maplibregl.Map) {
