@@ -3,6 +3,7 @@ import maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { fetchCrimes } from '../lib/api.js';
 import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
+import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
 
@@ -14,7 +15,11 @@ const DEFAULT_BEARING = -17;
 const CRIME_SOURCE_ID = 'crime-data';
 const CRIME_LAYER_ID = 'crime-points';
 
-export default function MapView() {
+interface MapViewProps {
+  selectedHour: number;
+}
+
+export default function MapView({ selectedHour }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
 
@@ -47,6 +52,32 @@ export default function MapView() {
       mapRef.current = null;
     };
   }, []);
+
+  // Update time filter when selectedHour changes
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getLayer(CRIME_LAYER_ID)) return;
+
+    const fromHour = (selectedHour - TIME_WINDOW + 24) % 24;
+    const toHour = (selectedHour + TIME_WINDOW) % 24;
+
+    let filter: maplibregl.FilterSpecification;
+    if (fromHour <= toHour) {
+      // Normal range (e.g., 10-14)
+      filter = ['all',
+        ['>=', ['get', 'occurred_hour'], fromHour],
+        ['<=', ['get', 'occurred_hour'], toHour],
+      ];
+    } else {
+      // Wrapping range (e.g., 22-02)
+      filter = ['any',
+        ['>=', ['get', 'occurred_hour'], fromHour],
+        ['<=', ['get', 'occurred_hour'], toHour],
+      ];
+    }
+
+    map.setFilter(CRIME_LAYER_ID, filter);
+  }, [selectedHour]);
 
   return (
     <div
