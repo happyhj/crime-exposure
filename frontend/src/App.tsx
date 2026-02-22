@@ -4,6 +4,7 @@ import TimeSlider from './components/TimeSlider.js';
 import CitySelector from './components/CitySelector.js';
 import StatsPanel from './components/StatsPanel.js';
 import OnboardingPanel from './components/OnboardingPanel.js';
+import Dashboard from './components/Dashboard.js';
 import type { CityId } from './lib/cities.js';
 import type { CrimeRecord } from './lib/api.js';
 import type { UserProfile } from './types/user-profile.js';
@@ -107,25 +108,10 @@ export default function App() {
       )}
 
       {mode === 'analysis' && (
-        <button
-          onClick={handleBackToOnboarding}
-          style={{
-            position: 'absolute',
-            top: 12,
-            right: 60,
-            zIndex: 10,
-            padding: '8px 16px',
-            borderRadius: 8,
-            border: '1px solid rgba(255,255,255,0.3)',
-            background: 'rgba(0,0,0,0.7)',
-            color: '#fff',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Edit Profile
-        </button>
+        <Dashboard
+          profile={profile}
+          onBack={handleBackToOnboarding}
+        />
       )}
 
       {mode === 'onboarding' && (
