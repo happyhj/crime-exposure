@@ -4,6 +4,7 @@ import 'maplibre-gl/dist/maplibre-gl.css';
 import { fetchCrimes } from '../lib/api.js';
 import { crimesToGeoJSON, CATEGORY_COLORS } from '../lib/geojson.js';
 import { buildBeatIndex, type BeatIndex } from '../lib/beat-fallback.js';
+import { getAvatarPosition, getRouteGeoJSON } from '../lib/avatar-route.js';
 import { TIME_WINDOW } from './TimeSlider.js';
 
 const MAPTILER_KEY = import.meta.env.VITE_MAPTILER_KEY ?? '';
@@ -18,6 +19,8 @@ const CRIME_LAYER_ID = 'crime-points';
 const BEATS_SOURCE_ID = 'beat-boundaries';
 const BEATS_FILL_LAYER_ID = 'beat-fill';
 const BEATS_LINE_LAYER_ID = 'beat-line';
+const ROUTE_SOURCE_ID = 'avatar-route';
+const ROUTE_LAYER_ID = 'avatar-route-line';
 
 interface MapViewProps {
   selectedHour: number;
@@ -26,6 +29,7 @@ interface MapViewProps {
 export default function MapView({ selectedHour }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const avatarMarkerRef = useRef<maplibregl.Marker | null>(null);
 
   useEffect(() => {
     if (!mapContainer.current || mapRef.current) return;
@@ -46,19 +50,30 @@ export default function MapView({ selectedHour }: MapViewProps) {
     map.on('load', () => {
       addBeatBoundaryLayer(map);
       addBuildingLayer(map);
+      addRouteLayer(map);
       addCrimeLayer(map);
       loadCrimeData(map);
+
+      // Create avatar marker
+      const avatarEl = createAvatarElement();
+      const initialPos = getAvatarPosition(12);
+      const marker = new maplibregl.Marker({ element: avatarEl })
+        .setLngLat(initialPos)
+        .addTo(map);
+      avatarMarkerRef.current = marker;
     });
 
     mapRef.current = map;
 
     return () => {
+      avatarMarkerRef.current?.remove();
+      avatarMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Update time filter when selectedHour changes
+  // Update time filter and avatar position when selectedHour changes
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getLayer(CRIME_LAYER_ID)) return;
@@ -68,13 +83,11 @@ export default function MapView({ selectedHour }: MapViewProps) {
 
     let filter: maplibregl.FilterSpecification;
     if (fromHour <= toHour) {
-      // Normal range (e.g., 10-14)
       filter = ['all',
         ['>=', ['get', 'occurred_hour'], fromHour],
         ['<=', ['get', 'occurred_hour'], toHour],
       ];
     } else {
-      // Wrapping range (e.g., 22-02)
       filter = ['any',
         ['>=', ['get', 'occurred_hour'], fromHour],
         ['<=', ['get', 'occurred_hour'], toHour],
@@ -82,6 +95,12 @@ export default function MapView({ selectedHour }: MapViewProps) {
     }
 
     map.setFilter(CRIME_LAYER_ID, filter);
+
+    // Update avatar position
+    if (avatarMarkerRef.current) {
+      const pos = getAvatarPosition(selectedHour);
+      avatarMarkerRef.current.setLngLat(pos);
+    }
 
     // Day/night building color transition
     updateDayNightStyle(map, selectedHour);
@@ -180,6 +199,37 @@ function addBeatBoundaryLayer(map: maplibregl.Map) {
         ${props.sector ? `Sector: ${props.sector}` : ''}
       `)
       .addTo(map);
+  });
+}
+
+function createAvatarElement(): HTMLDivElement {
+  const el = document.createElement('div');
+  el.style.width = '20px';
+  el.style.height = '20px';
+  el.style.borderRadius = '50%';
+  el.style.background = '#4CAF50';
+  el.style.border = '3px solid #fff';
+  el.style.boxShadow = '0 2px 6px rgba(0,0,0,0.4)';
+  el.style.cursor = 'pointer';
+  return el;
+}
+
+function addRouteLayer(map: maplibregl.Map) {
+  map.addSource(ROUTE_SOURCE_ID, {
+    type: 'geojson',
+    data: getRouteGeoJSON(),
+  });
+
+  map.addLayer({
+    id: ROUTE_LAYER_ID,
+    type: 'line',
+    source: ROUTE_SOURCE_ID,
+    paint: {
+      'line-color': '#4CAF50',
+      'line-width': 3,
+      'line-opacity': 0.7,
+      'line-dasharray': [2, 2],
+    },
   });
 }
 
