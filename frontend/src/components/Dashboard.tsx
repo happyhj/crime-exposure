@@ -4,16 +4,19 @@ import type { ExposureResult } from '../utils/exposure-score.js';
 import { computeExposureScore, type ScoreInput, type CrimeRecord as ScoreCrimeRecord } from '../utils/exposure-score.js';
 import { getFootRoute, type RouteResult } from '../services/routing.js';
 import { fetchCorridorCrimes, fetchRadiusCrimes, type CrimeRecord } from '../lib/api.js';
+import type { RouteOverlayData } from '../App.js';
 
 interface DashboardProps {
   profile: UserProfile;
   onBack: () => void;
+  onRoutesReady?: (routes: RouteOverlayData[]) => void;
 }
 
 interface CandidateResult {
   candidate: Candidate;
   route: RouteResult | null;
   score: ExposureResult | null;
+  corridorCrimes: CrimeRecord[];
   loading: boolean;
   error: string | null;
 }
@@ -28,7 +31,9 @@ function crimeToScoreCrime(c: CrimeRecord): ScoreCrimeRecord {
   };
 }
 
-export default function Dashboard({ profile, onBack }: DashboardProps) {
+const CANDIDATE_COLORS = ['#4fc3f7', '#66bb6a', '#ffa726'];
+
+export default function Dashboard({ profile, onBack, onRoutesReady }: DashboardProps) {
   const [results, setResults] = useState<CandidateResult[]>([]);
 
   const analyzeCandidate = useCallback(async (candidate: Candidate, idx: number) => {
@@ -36,7 +41,7 @@ export default function Dashboard({ profile, onBack }: DashboardProps) {
 
     setResults(prev => {
       const next = [...prev];
-      next[idx] = { candidate, route: null, score: null, loading: true, error: null };
+      next[idx] = { candidate, route: null, score: null, corridorCrimes: [], loading: true, error: null };
       return next;
     });
 
@@ -92,10 +97,11 @@ export default function Dashboard({ profile, onBack }: DashboardProps) {
       };
 
       const score = computeExposureScore(input);
+      const crimeData = corridorRes.data as CrimeRecord[];
 
       setResults(prev => {
         const next = [...prev];
-        next[idx] = { ...next[idx], score, loading: false };
+        next[idx] = { ...next[idx], score, corridorCrimes: crimeData, loading: false };
         return next;
       });
     } catch (err) {
@@ -112,6 +118,7 @@ export default function Dashboard({ profile, onBack }: DashboardProps) {
       candidate: c,
       route: null,
       score: null,
+      corridorCrimes: [],
       loading: false,
       error: null,
     })));
@@ -120,6 +127,22 @@ export default function Dashboard({ profile, onBack }: DashboardProps) {
       analyzeCandidate(c, i);
     });
   }, [profile.candidates, analyzeCandidate]);
+
+  // Emit route overlay data when routes are ready
+  useEffect(() => {
+    if (!onRoutesReady) return;
+    const overlays: RouteOverlayData[] = results
+      .filter(r => r.route && !r.loading)
+      .map((r, i) => ({
+        candidateId: r.candidate.id,
+        route: r.route!,
+        crimes: r.corridorCrimes
+          .filter(c => c.latitude != null && c.longitude != null)
+          .map(c => ({ latitude: c.latitude!, longitude: c.longitude! })),
+        color: CANDIDATE_COLORS[i % CANDIDATE_COLORS.length],
+      }));
+    onRoutesReady(overlays);
+  }, [results, onRoutesReady]);
 
   // Find the best candidate (lowest score)
   const bestIdx = results.reduce((best, r, i) => {
